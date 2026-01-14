@@ -16,17 +16,23 @@ interface ProductCardProps {
     image?: string;
     stock?: number;
     category_name?: string;
+    review_count?: number;
+    average_rating?: number;
   };
   onPress?: () => void;
   initialInWishlist?: boolean;
+  compact?: boolean; // Yeni: Grid layout için kompakt mod
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, initialInWishlist = false }) => {
+export const ProductCard: React.FC<ProductCardProps> = ({
+  product,
+  onPress,
+  initialInWishlist = false,
+  compact = false
+}) => {
   const router = useRouter();
   const [inWishlist, setInWishlist] = useState(initialInWishlist);
   const [loading, setLoading] = useState(false);
-
-
 
   const imageSource = product.image_url || product.image;
 
@@ -52,7 +58,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, init
   };
 
   const handlePress = async () => {
-    // Record view when product is clicked
     try {
       await viewHistoryAPI.recordView(product.id);
     } catch (error) {
@@ -61,7 +66,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, init
     if (onPress) {
       onPress();
     } else {
-      // Navigate to product detail page
       router.push(`/product/${product.id}`);
     }
   };
@@ -70,24 +74,24 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, init
 
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.8}>
-      <View style={styles.card}>
-        {imageSource && <Image source={{ uri: imageSource }} style={styles.image} />}
+      <View style={compact ? styles.compactCard : styles.card}>
+        {imageSource && <Image source={{ uri: imageSource }} style={compact ? styles.compactImage : styles.image} />}
 
         {/* Wishlist Button */}
         <TouchableOpacity
-          style={styles.wishlistButton}
+          style={compact ? styles.compactWishlistButton : styles.wishlistButton}
           onPress={handleWishlistToggle}
           disabled={loading}
         >
           <FontAwesome
             name={inWishlist ? "heart" : "heart-o"}
-            size={22}
+            size={compact ? 18 : 22}
             color={inWishlist ? "#f44336" : "#999"}
           />
         </TouchableOpacity>
 
-        {/* Stock Badge */}
-        {product.stock !== undefined && (
+        {/* Stock Badge - Only in full mode */}
+        {!compact && product.stock !== undefined && (
           <View style={[styles.stockBadge, { backgroundColor: isInStock ? '#4CAF50' : '#f44336' }]}>
             <Text style={styles.stockText}>
               {isInStock ? `Stokta` : 'Stok Yok'}
@@ -95,13 +99,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, init
           </View>
         )}
 
-        <View style={styles.infoContainer}>
-          <Text style={styles.name} numberOfLines={2}>{product.name}</Text>
-          <Text style={styles.brand}>{product.brand}</Text>
-          {product.category_name && (
+        <View style={compact ? styles.compactInfoContainer : styles.infoContainer}>
+          <Text style={compact ? styles.compactName : styles.name} numberOfLines={2}>{product.name}</Text>
+
+          {/* Rating - Compact mode only */}
+          {compact && product.average_rating && (
+            <View style={styles.ratingContainer}>
+              <FontAwesome name="star" size={12} color="#FFA500" />
+              <Text style={styles.ratingText}>{product.average_rating.toFixed(1)}</Text>
+              {product.review_count && product.review_count > 0 && (
+                <Text style={styles.reviewCount}>({product.review_count})</Text>
+              )}
+            </View>
+          )}
+
+          {!compact && <Text style={styles.brand}>{product.brand}</Text>}
+          {!compact && product.category_name && (
             <Text style={styles.category}>{product.category_name}</Text>
           )}
-          <Text style={styles.price}>
+          <Text style={compact ? styles.compactPrice : styles.price}>
             {parseFloat(product.price).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}
           </Text>
         </View>
@@ -187,6 +203,76 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#000000',
-    textAlign: 'left', // Aligned left looks modern
+    textAlign: 'left',
+  },
+  // Compact Mode Styles (Grid Layout)
+  compactCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginBottom: 8,
+    marginHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
+    width: '100%',
+  },
+  compactImage: {
+    width: '100%',
+    height: 130,
+    backgroundColor: '#f9fafb',
+  },
+  compactWishlistButton: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  compactInfoContainer: {
+    padding: 8,
+  },
+  compactName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 3,
+    lineHeight: 16,
+  },
+  compactPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E31E24',
+    marginTop: 3,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+    gap: 3,
+  },
+  ratingText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  reviewCount: {
+    fontSize: 9,
+    color: '#6B7280',
   },
 });

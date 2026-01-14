@@ -14,8 +14,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import api, { wishlistAPI, productAPI } from '../../services/api';
-import { ProductCard } from '../../components/ProductCard';
+import api, { wishlistAPI, productAPI } from '../../../services/api';
+import { ProductCard } from '../../../components/ProductCard';
 import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
@@ -42,6 +42,8 @@ interface Product {
   image?: string;
   category?: { id: number; name: string } | null;
   category_name?: string;
+  review_count?: number;
+  average_rating?: number;
 }
 
 const HomeScreen = () => {
@@ -54,11 +56,12 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<'all' | 'reviews' | 'comments' | 'popular'>('all');
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
 
   const fetchData = useCallback(async () => {
     try {
-      const { getToken } = await import('../../storage/storage.native');
+      const { getToken } = await import('../../../storage/storage.native');
       const token = await getToken();
 
       const requests: Promise<any>[] = [
@@ -104,7 +107,7 @@ const HomeScreen = () => {
 
   useEffect(() => {
     filterProducts();
-  }, [searchQuery, selectedCategory, products]);
+  }, [searchQuery, selectedCategory, sortBy, products]);
 
   const filterProducts = () => {
     let result = [...products];
@@ -122,6 +125,15 @@ const HomeScreen = () => {
           p.name.toLowerCase().includes(query) ||
           p.brand.toLowerCase().includes(query)
       );
+    }
+
+    // Sıralama filtresi
+    if (sortBy === 'reviews' || sortBy === 'comments') {
+      // En çok değerlendirilen / yorumlanan (aynı mantık)
+      result.sort((a, b) => (b.review_count || 0) - (a.review_count || 0));
+    } else if (sortBy === 'popular') {
+      // Popüler ürünler (ID'ye göre - backend'den geliyor olabilir)
+      result.sort((a, b) => b.id - a.id);
     }
 
     setFilteredProducts(result);
@@ -257,6 +269,49 @@ const HomeScreen = () => {
         ))}
       </ScrollView>
 
+      {/* Sıralama Filtreleri */}
+      <View style={styles.sortSection}>
+        <Text style={styles.sortTitle}>Sırala:</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.sortContainer}
+        >
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'all' && styles.sortChipActive]}
+            onPress={() => setSortBy('all')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'all' && styles.sortChipTextActive]}>
+              Tümü
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'reviews' && styles.sortChipActive]}
+            onPress={() => setSortBy('reviews')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'reviews' && styles.sortChipTextActive]}>
+              En Çok Değerlendirilen
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'comments' && styles.sortChipActive]}
+            onPress={() => setSortBy('comments')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'comments' && styles.sortChipTextActive]}>
+              En Çok Yorum Alan
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortChip, sortBy === 'popular' && styles.sortChipActive]}
+            onPress={() => setSortBy('popular')}
+          >
+            <Text style={[styles.sortChipText, sortBy === 'popular' && styles.sortChipTextActive]}>
+              En Çok Satılan
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
       {/* Aktif Filtre Bilgisi */}
       {
         (searchQuery || selectedCategory !== null) && (
@@ -284,9 +339,12 @@ const HomeScreen = () => {
           <ProductCard
             product={item}
             initialInWishlist={wishlistIds.has(item.id)}
+            compact={true}
           />
         )}
         keyExtractor={(item) => item.id.toString()}
+        numColumns={2}
+        columnWrapperStyle={styles.gridRow}
         contentContainerStyle={styles.list}
         ListHeaderComponent={ListHeader}
         refreshControl={
@@ -501,6 +559,47 @@ const styles = StyleSheet.create({
   clearButton2Text: {
     color: '#fff',
     fontWeight: '600',
+  },
+  // Grid Layout Styles
+  gridRow: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  // Sort Filter Styles
+  sortSection: {
+    marginBottom: 15,
+    marginTop: 10,
+  },
+  sortTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 10,
+  },
+  sortContainer: {
+    gap: 8,
+    paddingRight: 16,
+  },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  sortChipActive: {
+    backgroundColor: '#E31E24',
+    borderColor: '#E31E24',
+  },
+  sortChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  sortChipTextActive: {
+    color: '#FFFFFF',
   },
 });
 

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import api, { assignmentAPI } from '../../services/api';
+import api, { assignmentAPI } from '../../../services/api';
 
 // Helper: Dinamik image URL oluştur (hardcoded IP kullanmadan)
 const getImageUrl = (imagePath: string | null): string | null => {

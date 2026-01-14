@@ -1,17 +1,25 @@
 import { Drawer } from 'expo-router/drawer';
+import { Tabs } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { DrawerContentScrollView, DrawerItemList } from '@react-navigation/drawer';
+import { useNavigation } from '@react-navigation/native';
+import { DrawerActions } from '@react-navigation/native';
 
-// Orijinal tema renkleri
+// Beko tema renkleri
 const THEME = {
-  primary: '#000000',      // Kurumsal siyah
+  primary: '#E31E24',      // Beko kırmızısı
+  primaryDark: '#C01820',  // Koyu kırmızı
+  black: '#000000',        // Siyah
   secondary: '#111827',    // Koyu gri
   accent: '#374151',       // Orta gri
   background: '#FFFFFF',   // Beyaz
   text: '#111827',
   textLight: '#6B7280',
+  gray: '#9CA3AF',         // Gri
+  lightGray: '#E5E7EB',    // Açık gri
   border: '#E5E7EB',
+  white: '#FFFFFF',
 };
 
 function CustomDrawerContent(props: any) {
@@ -33,12 +41,29 @@ function CustomDrawerContent(props: any) {
   );
 }
 
+// DrawerToggleButton component for headers
+function DrawerToggleButton() {
+  const navigation = useNavigation();
+
+  return (
+    <Pressable
+      onPress={() => navigation.dispatch(DrawerActions.toggleDrawer())}
+      style={({ pressed }) => ({
+        marginLeft: 15,
+        opacity: pressed ? 0.5 : 1,
+      })}
+    >
+      <FontAwesome name="bars" size={24} color="#FFFFFF" />
+    </Pressable>
+  );
+}
+
 export default function DrawerLayout() {
   return (
     <Drawer
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
-        headerStyle: { backgroundColor: THEME.primary },
+        headerStyle: { backgroundColor: THEME.black },
         headerTintColor: '#FFFFFF',
         headerTitleStyle: { fontWeight: 'bold', fontSize: 18 },
         drawerActiveTintColor: THEME.primary,
@@ -46,32 +71,20 @@ export default function DrawerLayout() {
         drawerActiveBackgroundColor: '#F3F4F6',
         drawerLabelStyle: { marginLeft: -10, fontSize: 15, fontWeight: '600' },
         drawerItemStyle: { borderRadius: 12, marginHorizontal: 8, marginVertical: 2 },
+        headerLeft: () => <DrawerToggleButton />,
       }}
     >
+      {/* Tabs Group - Ana ekran (Bottom tabs ile) */}
       <Drawer.Screen
-        name="index"
+        name="(tabs)"
         options={{
           drawerLabel: 'Ana Sayfa',
-          title: 'Ürünler',
+          title: 'BekoSIRS',
           drawerIcon: ({ color, size }) => <FontAwesome name="home" size={size} color={color} />,
         }}
       />
-      <Drawer.Screen
-        name="my-products"
-        options={{
-          drawerLabel: 'Ürünlerim',
-          title: 'Ürünlerim',
-          drawerIcon: ({ color, size }) => <FontAwesome name="cube" size={size} color={color} />,
-        }}
-      />
-      <Drawer.Screen
-        name="wishlist"
-        options={{
-          drawerLabel: 'İstek Listem',
-          title: 'İstek Listem',
-          drawerIcon: ({ color, size }) => <FontAwesome name="heart" size={size} color={color} />,
-        }}
-      />
+
+      {/* Diğer sayfalar */}
       <Drawer.Screen
         name="recommendations"
         options={{
@@ -104,14 +117,6 @@ export default function DrawerLayout() {
           drawerIcon: ({ color, size }) => <FontAwesome name="cog" size={size} color={color} />,
         }}
       />
-      <Drawer.Screen
-        name="profile"
-        options={{
-          drawerLabel: 'Hesabım',
-          title: 'Profilim',
-          drawerIcon: ({ color, size }) => <FontAwesome name="user" size={size} color={color} />,
-        }}
-      />
     </Drawer>
   );
 }
@@ -123,7 +128,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.background,
   },
   logoContainer: {
-    backgroundColor: THEME.primary,
+    backgroundColor: THEME.black,
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 10,
@@ -161,3 +166,5 @@ const styles = StyleSheet.create({
     color: THEME.textLight,
   },
 });
+
+

@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { wishlistAPI, viewHistoryAPI } from '../../services/api';
+import { wishlistAPI, viewHistoryAPI } from '../../../services/api';
 import { useRouter } from 'expo-router';
 
 interface WishlistItem {
