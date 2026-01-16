@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import * as Lucide from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import { ToastContainer, type ToastType } from "../components/Toast";
@@ -64,6 +65,7 @@ export default function InstallmentPlansPage() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [approvingId, setApprovingId] = useState<number | null>(null);
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // Creation Modal State
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -177,14 +179,44 @@ export default function InstallmentPlansPage() {
     };
 
     const handleViewDetail = (plan: InstallmentPlan) => {
-        setSelectedPlan(plan);
-        fetchInstallments(plan.id);
+        setSearchParams({ planId: plan.id.toString() });
     };
 
     const handleBackToList = () => {
+        setSearchParams({});
         setSelectedPlan(null);
         setInstallments([]);
     };
+
+    useEffect(() => {
+        const planId = searchParams.get("planId");
+        if (planId) {
+            const loadDetail = async () => {
+                // Eğer zaten yüklüyse tekrar yükleme
+                if (selectedPlan && selectedPlan.id === Number(planId)) return;
+
+                setLoading(true);
+                try {
+                    // Plan detayını çek (listeden bağımsız)
+                    const response = await installmentAPI.getPlan(Number(planId));
+                    setSelectedPlan(response.data);
+                    // Taksitleri çek
+                    await fetchInstallments(Number(planId));
+                } catch (error) {
+                    console.error("Plan detay hatası:", error);
+                    showToast("error", "Plan detayları yüklenemedi");
+                    setSearchParams({}); // Hatada listeye dön
+                } finally {
+                    setLoading(false);
+                }
+            };
+            loadDetail();
+        } else {
+            // URL parametresi yoksa detaydan çık
+            setSelectedPlan(null);
+            setInstallments([]);
+        }
+    }, [searchParams]);
 
     const handleApprovePayment = async (installmentId: number) => {
         setApprovingId(installmentId);

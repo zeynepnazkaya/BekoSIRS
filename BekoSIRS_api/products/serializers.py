@@ -669,8 +669,8 @@ class InstallmentPlanListSerializer(InstallmentPlanSerializer):
     class Meta(InstallmentPlanSerializer.Meta):
         fields = [
             'id', 'customer', 'customer_name', 'product', 'product_name',
-            'total_amount', 'remaining_amount', 'progress_percentage',
-            'status', 'status_display', 'start_date'
+            'total_amount', 'down_payment', 'paid_amount', 'remaining_amount',
+            'progress_percentage', 'status', 'status_display', 'start_date'
         ]
 
 

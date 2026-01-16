@@ -7,10 +7,11 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
 
 from products.models import CustomUser
-from products.serializers import RegisterSerializer, UserSerializer
+from products.serializers import RegisterSerializer, UserSerializer, GroupSerializer
 
 
 class UserManagementViewSet(viewsets.ModelViewSet):
@@ -63,9 +64,42 @@ class GroupViewSet(viewsets.ModelViewSet):
     queryset = Group.objects.all()
     permission_classes = [IsAdminUser]
 
-    def list(self, request):
-        groups = Group.objects.all().values("id", "name")
-        return Response(groups)
+    serializer_class = GroupSerializer
+
+    def list(self, request, *args, **kwargs):
+        # Varsayılan rolleri oluştur (Eğer yoksa)
+        system_roles = ['Admin', 'Satıcı', 'Müşteri']
+        for role in system_roles:
+            Group.objects.get_or_create(name=role)
+        
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=['get'])
+    def available_permissions(self, request):
+        """Atanabilir tüm izinleri listele (Sadece ilgili app'ler)."""
+        # Sadece business logic ve auth yetkilerini getir
+        perms = Permission.objects.filter(content_type__app_label__in=['products', 'auth'])
+        data = list(perms.values('id', 'name', 'codename', 'content_type__model'))
+        return Response(data)
+
+    @action(detail=True, methods=['get'])
+    def permissions(self, request, pk=None):
+        """Seçili grubun izinlerini (ID listesi olarak) döndür."""
+        group = self.get_object()
+        perm_ids = group.permissions.values_list('id', flat=True)
+        return Response(perm_ids)
+
+    @action(detail=True, methods=['post'])
+    def update_permissions(self, request, pk=None):
+        """Grubun izinlerini güncelle."""
+        group = self.get_object()
+        permission_ids = request.data.get('permission_ids', [])
+        # Permission validation yapılabilir ama şimdilik doğrudan set ediyoruz
+        group.permissions.set(permission_ids)
+        return Response({
+            'success': True, 
+            'message': f'{group.name} rolünün yetkileri güncellendi.'
+        })
 
 
 @api_view(["GET", "PUT", "PATCH"])

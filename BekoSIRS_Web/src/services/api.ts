@@ -75,6 +75,7 @@ export const installmentAPI = {
     getPlanInstallments: (planId: number) => api.get(`installment-plans/${planId}/installments/`),
     adminApprovePayment: (installmentId: number) => api.post(`installments/${installmentId}/approve/`),
     createPlan: (data: any) => api.post('installment-plans/', data),
+    getPlan: (id: number) => api.get(`installment-plans/${id}/`),
 };
 
 // ----------------------------------------

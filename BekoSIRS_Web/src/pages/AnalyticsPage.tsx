@@ -359,8 +359,10 @@ const MarketingContent: React.FC<{ data: any }> = ({ data }) => {
     const campaignCards = [
         { key: 'birthday', name: 'Doğum Günü', icon: '🎂', desc: 'Doğum günü yaklaşanlara indirim', color: 'yellow' },
         { key: 'churn_prevention', name: 'Kayıp Önleme', icon: '💔', desc: '90+ gün inaktif müşteriler', color: 'red' },
-        { key: 'review_request', name: 'Yorum İsteği', icon: '⭐', desc: 'Satın alma sonrası yorum', color: 'purple' },
-        { key: 'welcome', name: 'Hoş Geldin', icon: '🎉', desc: 'Yeni kayıt hoş geldin emaili', color: 'green' },
+        { key: 'review_request', name: 'Yorum İsteği', icon: '⭐', desc: 'Son 30 günde alışveriş yapanlar', color: 'purple' },
+        { key: 'welcome', name: 'Hoş Geldin', icon: '🎉', desc: 'Son 7 günde kayıt olanlar', color: 'green' },
+        { key: 'installment_reminder', name: 'Taksit Hatırlatma', icon: '💳', desc: '7 gün içinde ödeme vadesi', color: 'blue' },
+        { key: 'delivery_feedback', name: 'Teslimat Geri Bildirimi', icon: '📦', desc: 'Son 30 günde teslimat alanlar', color: 'teal' },
     ];
 
     return (
