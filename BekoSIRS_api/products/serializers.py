@@ -238,6 +238,9 @@ class ServiceQueueSerializer(serializers.ModelSerializer):
 
 class ServiceRequestSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.username', read_only=True)
+    customer_phone = serializers.CharField(source='customer.phone_number', read_only=True)
+    customer_email = serializers.CharField(source='customer.email', read_only=True)
+    customer_address = serializers.SerializerMethodField()
     product_name = serializers.CharField(source='product_ownership.product.name', read_only=True)
     assigned_to_name = serializers.CharField(source='assigned_to.username', read_only=True)
     queue_entry = ServiceQueueSerializer(read_only=True)
@@ -245,10 +248,25 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ServiceRequest
-        fields = ['id', 'customer', 'customer_name', 'product_ownership', 'product_ownership_detail',
+        fields = ['id', 'customer', 'customer_name', 'customer_phone', 'customer_email', 'customer_address',
+                  'product_ownership', 'product_ownership_detail',
                   'product_name', 'request_type', 'status', 'description', 'created_at', 'updated_at',
                   'assigned_to', 'assigned_to_name', 'resolution_notes', 'resolved_at', 'queue_entry']
         read_only_fields = ['id', 'customer', 'created_at', 'updated_at', 'resolved_at']
+
+    def get_customer_address(self, obj):
+        """Build customer address from various fields."""
+        customer = obj.customer
+        parts = []
+        if customer.open_address:
+            parts.append(customer.open_address)
+        if hasattr(customer, 'area') and customer.area:
+            parts.append(customer.area.name)
+        if hasattr(customer, 'district') and customer.district:
+            parts.append(customer.district.name)
+        if customer.address:
+            return customer.address
+        return ", ".join(parts) if parts else None
 
 
 class ServiceRequestCreateSerializer(serializers.ModelSerializer):

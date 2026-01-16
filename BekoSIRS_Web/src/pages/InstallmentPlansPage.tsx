@@ -248,7 +248,7 @@ export default function InstallmentPlansPage() {
         return (
             <div className="flex min-h-screen bg-gray-100">
                 <Sidebar />
-                <main className="flex-1 p-6 ml-64">
+                <main className="flex-1 p-6">
                     <button
                         onClick={handleBackToList}
                         className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
@@ -360,7 +360,7 @@ export default function InstallmentPlansPage() {
     return (
         <div className="flex min-h-screen bg-gray-100">
             <Sidebar />
-            <main className="flex-1 p-6 ml-64">
+            <main className="flex-1 p-6">
                 <div className="flex justify-between items-center mb-6">
                     <div className="flex items-center gap-3">
                         <CreditCard className="w-8 h-8 text-gray-700" />

@@ -295,6 +295,18 @@ export const locationAPI = {
 };
 
 // ----------------------------------------
+// 🔹 INSTALLMENT / PAYMENT API
+// ----------------------------------------
+export const installmentAPI = {
+  // Get customer's own installment plans
+  getMyPlans: () => api.get('api/v1/installment-plans/my-plans/'),
+  // Get installments for a specific plan
+  getPlanInstallments: (planId: number) => api.get(`api/v1/installment-plans/${planId}/installments/`),
+  // Customer confirms payment
+  confirmPayment: (installmentId: number) => api.post(`api/v1/installments/${installmentId}/customer-confirm/`),
+};
+
+// ----------------------------------------
 // 🔹 IMAGE URL HELPER
 // ----------------------------------------
 /**

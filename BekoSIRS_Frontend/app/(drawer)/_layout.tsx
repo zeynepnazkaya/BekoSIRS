@@ -102,6 +102,14 @@ export default function DrawerLayout() {
         }}
       />
       <Drawer.Screen
+        name="payments"
+        options={{
+          drawerLabel: 'Ödemelerim',
+          title: 'Ödemelerim',
+          drawerIcon: ({ color, size }) => <FontAwesome name="credit-card" size={size} color={color} />,
+        }}
+      />
+      <Drawer.Screen
         name="notifications"
         options={{
           drawerLabel: 'Bildirimler',

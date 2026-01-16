@@ -48,6 +48,13 @@ class InstallmentPlanViewSet(viewsets.ModelViewSet):
         serializer = InstallmentSerializer(installments, many=True)
         return response.Response(serializer.data)
 
+    @decorators.action(detail=False, methods=['get'], url_path='my-plans')
+    def my_plans(self, request):
+        """GET /api/v1/installment-plans/my-plans/ - Customer's own installment plans."""
+        plans = InstallmentPlan.objects.filter(customer=request.user).prefetch_related('installments')
+        serializer = InstallmentPlanSerializer(plans, many=True)
+        return response.Response(serializer.data)
+
 
 class InstallmentViewSet(viewsets.ModelViewSet):
     queryset = Installment.objects.all()
@@ -73,3 +80,21 @@ class InstallmentViewSet(viewsets.ModelViewSet):
                 
             return response.Response({'status': 'success'})
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @decorators.action(detail=True, methods=['post'], url_path='customer-confirm')
+    def customer_confirm(self, request, pk=None):
+        """POST /api/v1/installments/{id}/customer-confirm/ - Customer confirms they paid."""
+        installment = self.get_object()
+        
+        # Only allow customer to confirm their own installments
+        if installment.plan.customer != request.user:
+            return response.Response({'error': 'Bu taksit size ait değil'}, status=status.HTTP_403_FORBIDDEN)
+        
+        if installment.status != 'pending':
+            return response.Response({'error': 'Bu taksit zaten işlenmiş'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        installment.status = 'customer_confirmed'
+        installment.customer_confirmed_at = timezone.now()
+        installment.save()
+        
+        return response.Response({'status': 'success', 'message': 'Ödeme onayı gönderildi'})

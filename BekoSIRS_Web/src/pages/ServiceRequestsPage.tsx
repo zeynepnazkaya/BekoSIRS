@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import {
   Wrench,
@@ -6,11 +6,13 @@ import {
   Filter,
   Clock,
   CheckCircle,
-  XCircle,
   Play,
+  X,
   User,
+  Phone,
+  MapPin,
+  FileText,
   ChevronDown,
-  AlertCircle,
 } from "lucide-react";
 import api from "../services/api";
 
@@ -24,29 +26,33 @@ interface ServiceRequest {
   description: string;
   created_at: string;
   updated_at: string;
-  assigned_to: number | null;
-  assigned_to_name: string | null;
   resolution_notes: string | null;
-  queue_entry?: {
-    queue_number: number;
-    priority: number;
-    estimated_wait_time: number;
+  // Customer details (from API)
+  customer_phone?: string;
+  customer_email?: string;
+  customer_address?: string;
+  product_ownership_detail?: {
+    product?: {
+      name?: string;
+    };
   };
 }
 
-interface User {
-  id: number;
-  username: string;
-  role: string;
-}
-
+// Simplified 3-status system
 const statusConfig: Record<string, { label: string; color: string; bgColor: string; icon: any }> = {
-  pending: { label: "Beklemede", color: "text-orange-600", bgColor: "bg-orange-100", icon: Clock },
-  in_queue: { label: "Sırada", color: "text-blue-600", bgColor: "bg-blue-100", icon: AlertCircle },
-  in_progress: { label: "İşlemde", color: "text-purple-600", bgColor: "bg-purple-100", icon: Play },
-  completed: { label: "Tamamlandı", color: "text-green-600", bgColor: "bg-green-100", icon: CheckCircle },
-  cancelled: { label: "İptal", color: "text-red-600", bgColor: "bg-red-100", icon: XCircle },
+  pending: { label: "Bekleniyor", color: "text-orange-600", bgColor: "bg-orange-100", icon: Clock },
+  in_queue: { label: "Bekleniyor", color: "text-orange-600", bgColor: "bg-orange-100", icon: Clock },
+  in_progress: { label: "Çözülüyor", color: "text-blue-600", bgColor: "bg-blue-100", icon: Play },
+  completed: { label: "Çözüldü", color: "text-green-600", bgColor: "bg-green-100", icon: CheckCircle },
+  cancelled: { label: "İptal", color: "text-gray-600", bgColor: "bg-gray-100", icon: X },
 };
+
+// Status options for dropdown (only 3 main statuses)
+const statusOptions = [
+  { value: "pending", label: "Bekleniyor" },
+  { value: "in_progress", label: "Çözülüyor" },
+  { value: "completed", label: "Çözüldü" },
+];
 
 const requestTypeLabels: Record<string, string> = {
   repair: "Tamir",
@@ -58,15 +64,16 @@ const requestTypeLabels: Record<string, string> = {
 
 export default function ServiceRequestsPage() {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Tümü");
+
+  // Detail panel state
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [assignUserId, setAssignUserId] = useState<number | null>(null);
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [resolutionNotes, setResolutionNotes] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -74,16 +81,9 @@ export default function ServiceRequestsPage() {
 
   const fetchData = async () => {
     try {
-      const [requestsRes, usersRes] = await Promise.all([
-        api.get("/service-requests/"),
-        api.get("/users/"),
-      ]);
-
-      const requestsArray = Array.isArray(requestsRes.data) ? requestsRes.data : requestsRes.data.results || [];
-      const usersArray = Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.results || [];
-
+      const response = await api.get("/service-requests/");
+      const requestsArray = Array.isArray(response.data) ? response.data : response.data.results || [];
       setRequests(requestsArray);
-      setUsers(usersArray.filter((u: User) => u.role === "admin" || u.role === "seller"));
     } catch (err: any) {
       setError(err.message || "Veriler yüklenemedi");
     } finally {
@@ -91,28 +91,56 @@ export default function ServiceRequestsPage() {
     }
   };
 
-  const handleAssign = async () => {
-    if (!selectedRequest || !assignUserId) return;
+  // Open detail panel
+  const openDetailPanel = (req: ServiceRequest) => {
+    setSelectedRequest(req);
+    setResolutionNotes(req.resolution_notes || "");
+    setShowDetailPanel(true);
+  };
 
+  // Change status
+  const handleStatusChange = async (newStatus: string) => {
+    if (!selectedRequest) return;
+
+    setActionLoading(true);
     try {
-      await api.post(`/service-requests/${selectedRequest.id}/assign/`, { assigned_to: assignUserId });
-      setShowModal(false);
-      fetchData();
+      if (newStatus === "in_progress") {
+        await api.post(`/service-requests/${selectedRequest.id}/start/`);
+      } else if (newStatus === "completed") {
+        await api.post(`/service-requests/${selectedRequest.id}/complete/`, {
+          resolution_notes: resolutionNotes
+        });
+      } else if (newStatus === "pending") {
+        // Reset to pending (use PATCH if available)
+        await api.patch(`/service-requests/${selectedRequest.id}/`, { status: "pending" });
+      }
+
+      await fetchData();
+      // Update selected request with new data
+      const updated = requests.find(r => r.id === selectedRequest.id);
+      if (updated) setSelectedRequest({ ...updated, status: newStatus });
+      else setShowDetailPanel(false);
     } catch (err: any) {
-      alert(err.message || "Atama başarısız");
+      alert(err.response?.data?.error || "İşlem başarısız");
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleComplete = async () => {
+  // Save notes without changing status
+  const handleSaveNotes = async () => {
     if (!selectedRequest) return;
 
+    setActionLoading(true);
     try {
-      await api.post(`/service-requests/${selectedRequest.id}/complete/`, { resolution_notes: resolutionNotes });
-      setShowModal(false);
-      setResolutionNotes("");
-      fetchData();
+      await api.patch(`/service-requests/${selectedRequest.id}/`, {
+        resolution_notes: resolutionNotes
+      });
+      await fetchData();
     } catch (err: any) {
-      alert(err.message || "Tamamlama başarısız");
+      alert(err.response?.data?.error || "Notlar kaydedilemedi");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -121,18 +149,29 @@ export default function ServiceRequestsPage() {
       req.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "Tümü" || req.status === statusFilter;
+
+    // Map filter to actual statuses
+    let matchesStatus = statusFilter === "Tümü";
+    if (statusFilter === "pending") matchesStatus = req.status === "pending" || req.status === "in_queue";
+    else if (statusFilter === "in_progress") matchesStatus = req.status === "in_progress";
+    else if (statusFilter === "completed") matchesStatus = req.status === "completed";
+    else if (statusFilter === "Tümü") matchesStatus = true;
+
     return matchesSearch && matchesStatus;
   });
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("tr-TR", {
       day: "numeric",
-      month: "long",
+      month: "short",
       year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
     });
+  };
+
+  // Get display status (map in_queue to pending for UI)
+  const getDisplayStatus = (status: string) => {
+    if (status === "in_queue") return "pending";
+    return status;
   };
 
   return (
@@ -143,29 +182,32 @@ export default function ServiceRequestsPage() {
         {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Wrench size={28} className="text-purple-500" />
-                <h1 className="text-2xl font-bold text-gray-900">Servis Talepleri</h1>
-              </div>
+            <div className="flex items-center space-x-3">
+              <Wrench size={28} className="text-purple-500" />
+              <h1 className="text-2xl font-bold text-gray-900">Servis Talepleri</h1>
             </div>
           </div>
         </header>
 
         {/* Hero Section */}
         <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-black text-white">
-          <div className="max-w-7xl mx-auto px-6 py-12">
-            <h2 className="text-3xl font-bold mb-2">Servis Yönetimi</h2>
-            <p className="text-purple-200">Müşteri servis taleplerini yönetin ve takip edin</p>
+          <div className="max-w-7xl mx-auto px-6 py-8">
+            <h2 className="text-2xl font-bold mb-1">Servis Yönetimi</h2>
+            <p className="text-purple-200 text-sm">Talepleri hızlıca işleme alın</p>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8">
-              {Object.entries(statusConfig).map(([key, config]) => {
-                const count = requests.filter((r) => r.status === key).length;
+            {/* Stats - 3 status */}
+            <div className="grid grid-cols-3 gap-4 mt-6">
+              {[
+                { key: "pending", statuses: ["pending", "in_queue"] },
+                { key: "in_progress", statuses: ["in_progress"] },
+                { key: "completed", statuses: ["completed"] },
+              ].map(({ key, statuses }) => {
+                const config = statusConfig[key];
+                const count = requests.filter((r) => statuses.includes(r.status)).length;
                 return (
                   <div key={key} className="bg-white/10 backdrop-blur rounded-xl p-4">
-                    <p className="text-purple-200 text-sm">{config.label}</p>
-                    <p className="text-2xl font-bold mt-1">{count}</p>
+                    <p className="text-purple-200 text-xs">{config.label}</p>
+                    <p className="text-3xl font-bold mt-1">{count}</p>
                   </div>
                 );
               })}
@@ -174,33 +216,31 @@ export default function ServiceRequestsPage() {
         </div>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto w-full px-6 py-8">
+        <main className="max-w-7xl mx-auto w-full px-6 py-6">
           {/* Filters */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type="text"
                 placeholder="Talep ara..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
               />
             </div>
 
             <div className="flex items-center space-x-2">
-              <Filter size={20} className="text-gray-400" />
+              <Filter size={18} className="text-gray-400" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer bg-white"
+                className="px-4 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer bg-white text-sm"
               >
-                <option value="Tümü">Tüm Durumlar</option>
-                {Object.entries(statusConfig).map(([key, config]) => (
-                  <option key={key} value={key}>
-                    {config.label}
-                  </option>
-                ))}
+                <option value="Tümü">Tümü</option>
+                <option value="pending">Bekleniyor</option>
+                <option value="in_progress">Çözülüyor</option>
+                <option value="completed">Çözüldü</option>
               </select>
             </div>
           </div>
@@ -208,7 +248,7 @@ export default function ServiceRequestsPage() {
           {/* Requests Table */}
           {loading ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500 mx-auto"></div>
             </div>
           ) : error ? (
             <div className="bg-red-50 text-red-600 p-4 rounded-xl">{error}</div>
@@ -217,56 +257,50 @@ export default function ServiceRequestsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Müşteri</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Ürün</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Tür</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Durum</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Atanan</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Tarih</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">İşlem</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Müşteri</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ürün</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tür</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Durum</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tarih</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredRequests.map((req) => {
-                    const status = statusConfig[req.status] || statusConfig.pending;
+                    const displayStatus = getDisplayStatus(req.status);
+                    const status = statusConfig[displayStatus] || statusConfig.pending;
                     const StatusIcon = status.icon;
                     return (
-                      <tr key={req.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4">
+                      <tr
+                        key={req.id}
+                        className="hover:bg-purple-50 cursor-pointer transition-colors"
+                        onClick={() => openDetailPanel(req)}
+                      >
+                        <td className="px-4 py-3">
                           <span className="font-bold text-purple-600">SR-{req.id}</span>
                         </td>
-                        <td className="px-6 py-4">{req.customer_name}</td>
-                        <td className="px-6 py-4">{req.product_name}</td>
-                        <td className="px-6 py-4">
-                          <span className="bg-gray-100 px-2 py-1 rounded text-sm">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                              <User size={14} className="text-purple-600" />
+                            </div>
+                            <span className="font-medium">{req.customer_name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{req.product_name}</td>
+                        <td className="px-4 py-3">
+                          <span className="bg-gray-100 px-2 py-1 rounded text-xs font-medium">
                             {requestTypeLabels[req.request_type] || req.request_type}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`${status.bgColor} ${status.color} px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 w-fit`}>
-                            <StatusIcon size={14} />
+                        <td className="px-4 py-3">
+                          <span className={`${status.bgColor} ${status.color} px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 w-fit`}>
+                            <StatusIcon size={12} />
                             {status.label}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          {req.assigned_to_name || (
-                            <span className="text-gray-400">Atanmadı</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
+                        <td className="px-4 py-3 text-xs text-gray-500">
                           {formatDate(req.created_at)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setShowModal(true);
-                            }}
-                            className="text-purple-600 hover:text-purple-800 font-medium"
-                          >
-                            Detay
-                          </button>
                         </td>
                       </tr>
                     );
@@ -284,137 +318,136 @@ export default function ServiceRequestsPage() {
         </main>
       </div>
 
-      {/* Detail Modal */}
-      {showModal && selectedRequest && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-6 flex justify-between items-center border-b">
-              <h2 className="text-2xl font-bold text-gray-900">
-                SR-{selectedRequest.id} Detay
-              </h2>
+      {/* Detail Side Panel */}
+      {showDetailPanel && selectedRequest && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => setShowDetailPanel(false)}
+          />
+
+          {/* Panel */}
+          <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col">
+            {/* Header */}
+            <div className="p-4 border-b flex justify-between items-center bg-purple-600 text-white">
+              <h2 className="text-lg font-bold">SR-{selectedRequest.id}</h2>
               <button
-                onClick={() => setShowModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                onClick={() => setShowDetailPanel(false)}
+                className="p-2 hover:bg-purple-700 rounded-full"
               >
-                <XCircle size={24} />
+                <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-gray-400 uppercase font-bold">Müşteri</p>
-                  <p className="font-semibold">{selectedRequest.customer_name}</p>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Customer Info */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                  <User size={14} /> Müşteri Bilgileri
+                </h3>
+                <div className="space-y-2">
+                  <p className="font-semibold text-lg">{selectedRequest.customer_name}</p>
+                  {selectedRequest.customer_phone && (
+                    <a
+                      href={`tel:${selectedRequest.customer_phone}`}
+                      className="flex items-center gap-2 text-purple-600 hover:underline"
+                    >
+                      <Phone size={14} />
+                      {selectedRequest.customer_phone}
+                    </a>
+                  )}
+                  {selectedRequest.customer_email && (
+                    <p className="text-sm text-gray-600">{selectedRequest.customer_email}</p>
+                  )}
+                  {selectedRequest.customer_address && (
+                    <p className="flex items-center gap-2 text-sm text-gray-600">
+                      <MapPin size={14} />
+                      {selectedRequest.customer_address}
+                    </p>
+                  )}
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase font-bold">Ürün</p>
-                  <p className="font-semibold">{selectedRequest.product_name}</p>
+              </div>
+
+              {/* Product & Type */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 uppercase">Ürün</p>
+                  <p className="font-semibold text-sm mt-1">{selectedRequest.product_name}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase font-bold">Tür</p>
-                  <p className="font-semibold">
-                    {requestTypeLabels[selectedRequest.request_type]}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase font-bold">Durum</p>
-                  <p className={`font-semibold ${statusConfig[selectedRequest.status]?.color}`}>
-                    {statusConfig[selectedRequest.status]?.label}
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 uppercase">Tür</p>
+                  <p className="font-semibold text-sm mt-1">
+                    {requestTypeLabels[selectedRequest.request_type] || selectedRequest.request_type}
                   </p>
                 </div>
               </div>
 
+              {/* Complaint/Description */}
+              <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
+                <h3 className="text-xs font-bold text-orange-600 uppercase mb-2 flex items-center gap-2">
+                  <FileText size={14} /> Şikayet / Açıklama
+                </h3>
+                <p className="text-gray-800">{selectedRequest.description || "Açıklama yok"}</p>
+              </div>
+
+              {/* Status Selector */}
               <div>
-                <p className="text-xs text-gray-400 uppercase font-bold mb-2">Açıklama</p>
-                <p className="bg-gray-50 p-4 rounded-xl">{selectedRequest.description}</p>
+                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Durum Değiştir</h3>
+                <div className="relative">
+                  <select
+                    value={getDisplayStatus(selectedRequest.status)}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    disabled={actionLoading || selectedRequest.status === "cancelled"}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium disabled:opacity-50"
+                  >
+                    {statusOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
+                </div>
               </div>
 
-              {selectedRequest.queue_entry && (
-                <div className="bg-blue-50 p-4 rounded-xl">
-                  <p className="text-xs text-blue-600 uppercase font-bold mb-2">Kuyruk Bilgisi</p>
-                  <div className="flex gap-4">
-                    <div>
-                      <span className="text-sm text-blue-600">Sıra No:</span>
-                      <span className="font-bold ml-2">{selectedRequest.queue_entry.queue_number}</span>
-                    </div>
-                    <div>
-                      <span className="text-sm text-blue-600">Tahmini Süre:</span>
-                      <span className="font-bold ml-2">{selectedRequest.queue_entry.estimated_wait_time} dk</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Resolution Notes */}
+              <div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Çözüm Notları</h3>
+                <textarea
+                  value={resolutionNotes}
+                  onChange={(e) => setResolutionNotes(e.target.value)}
+                  placeholder="Yapılan işlemleri yazın..."
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                  rows={4}
+                />
+                <button
+                  onClick={handleSaveNotes}
+                  disabled={actionLoading}
+                  className="mt-2 w-full bg-gray-100 text-gray-700 py-2 rounded-xl font-medium hover:bg-gray-200 disabled:opacity-50"
+                >
+                  Notları Kaydet
+                </button>
+              </div>
 
-              {/* Actions */}
-              {selectedRequest.status !== "completed" && selectedRequest.status !== "cancelled" && (
-                <div className="space-y-4 pt-4 border-t">
-                  {/* Assign */}
-                  {!selectedRequest.assigned_to && (
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase font-bold mb-2">Personel Ata</p>
-                      <div className="flex gap-2">
-                        <select
-                          value={assignUserId || ""}
-                          onChange={(e) => setAssignUserId(Number(e.target.value))}
-                          className="flex-1 px-4 py-2 border rounded-xl"
-                        >
-                          <option value="">Seçin...</option>
-                          {users.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.username} ({u.role})
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={handleAssign}
-                          className="bg-purple-600 text-white px-6 py-2 rounded-xl hover:bg-purple-700"
-                        >
-                          Ata
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Complete */}
-                  {selectedRequest.status === "in_progress" && (
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase font-bold mb-2">Tamamla</p>
-                      <textarea
-                        value={resolutionNotes}
-                        onChange={(e) => setResolutionNotes(e.target.value)}
-                        placeholder="Çözüm notları..."
-                        className="w-full px-4 py-2 border rounded-xl mb-2"
-                        rows={3}
-                      />
-                      <button
-                        onClick={handleComplete}
-                        className="bg-green-600 text-white px-6 py-2 rounded-xl hover:bg-green-700 w-full"
-                      >
-                        Talebi Tamamla
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedRequest.resolution_notes && (
-                <div className="bg-green-50 p-4 rounded-xl">
-                  <p className="text-xs text-green-600 uppercase font-bold mb-2">Çözüm Notları</p>
-                  <p>{selectedRequest.resolution_notes}</p>
+              {/* Existing Resolution Notes (if completed) */}
+              {selectedRequest.status === "completed" && selectedRequest.resolution_notes && (
+                <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+                  <h3 className="text-xs font-bold text-green-600 uppercase mb-2">Çözüm</h3>
+                  <p className="text-gray-800">{selectedRequest.resolution_notes}</p>
                 </div>
               )}
             </div>
 
-            <div className="p-6 border-t bg-gray-50">
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-full bg-black text-white py-3 rounded-full font-bold hover:bg-gray-800"
-              >
-                Kapat
-              </button>
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50">
+              <p className="text-xs text-gray-400 text-center">
+                Oluşturulma: {formatDate(selectedRequest.created_at)}
+              </p>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

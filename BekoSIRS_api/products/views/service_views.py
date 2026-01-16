@@ -180,6 +180,78 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
 
         return Response(data)
 
+    @action(detail=True, methods=['post'], url_path='start')
+    def start_request(self, request, pk=None):
+        """POST /api/service-requests/{id}/start/ - Start working on request (no assignment needed)."""
+        if request.user.role not in ['admin', 'seller']:
+            return Response({'error': 'Yetkiniz yok'}, status=status.HTTP_403_FORBIDDEN)
+
+        service_request = self.get_object()
+        
+        if service_request.status in ['completed', 'cancelled']:
+            return Response({'error': 'Bu talep zaten kapatılmış'}, status=status.HTTP_400_BAD_REQUEST)
+
+        service_request.status = 'in_progress'
+        service_request.save()
+
+        Notification.objects.create(
+            user=service_request.customer,
+            notification_type='service_update',
+            title='Servis Talebiniz İşleme Alındı',
+            message=f'Talep SR-{service_request.id} artık işleme alındı.',
+            related_service_request=service_request
+        )
+        return Response({'success': 'Talep işleme alındı'})
+
+    @action(detail=True, methods=['post'], url_path='complete')
+    def complete_request(self, request, pk=None):
+        """POST /api/service-requests/{id}/complete/ - Complete the request."""
+        if request.user.role not in ['admin', 'seller']:
+            return Response({'error': 'Yetkiniz yok'}, status=status.HTTP_403_FORBIDDEN)
+
+        service_request = self.get_object()
+        
+        if service_request.status in ['completed', 'cancelled']:
+            return Response({'error': 'Bu talep zaten kapatılmış'}, status=status.HTTP_400_BAD_REQUEST)
+
+        resolution_notes = request.data.get('resolution_notes', '')
+        service_request.status = 'completed'
+        service_request.resolution_notes = resolution_notes
+        service_request.resolved_at = timezone.now()
+        service_request.save()
+
+        Notification.objects.create(
+            user=service_request.customer,
+            notification_type='service_update',
+            title='Servis Talebiniz Tamamlandı',
+            message=f'Talep SR-{service_request.id} başarıyla tamamlandı.',
+            related_service_request=service_request
+        )
+        return Response({'success': 'Talep tamamlandı'})
+
+    @action(detail=True, methods=['post'], url_path='cancel')
+    def cancel_request(self, request, pk=None):
+        """POST /api/service-requests/{id}/cancel/ - Cancel the request."""
+        if request.user.role not in ['admin', 'seller']:
+            return Response({'error': 'Yetkiniz yok'}, status=status.HTTP_403_FORBIDDEN)
+
+        service_request = self.get_object()
+        
+        if service_request.status in ['completed', 'cancelled']:
+            return Response({'error': 'Bu talep zaten kapatılmış'}, status=status.HTTP_400_BAD_REQUEST)
+
+        service_request.status = 'cancelled'
+        service_request.save()
+
+        Notification.objects.create(
+            user=service_request.customer,
+            notification_type='service_update',
+            title='Servis Talebiniz İptal Edildi',
+            message=f'Talep SR-{service_request.id} iptal edildi.',
+            related_service_request=service_request
+        )
+        return Response({'success': 'Talep iptal edildi'})
+
 
 class DashboardSummaryView(APIView):
     """Dashboard summary statistics for admin panel."""
