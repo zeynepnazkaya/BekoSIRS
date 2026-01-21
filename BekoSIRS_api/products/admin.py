@@ -3,7 +3,8 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import (
     CustomUser, Category, Product, ProductOwnership, UserActivity,
     Wishlist, WishlistItem, ViewHistory, Review,
-    ServiceRequest, ServiceQueue, Notification, Recommendation
+    ServiceRequest, ServiceQueue, Notification, Recommendation,
+    CustomerAddress, UserNotificationPreference
 )
 
 
@@ -12,8 +13,21 @@ class CustomUserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'role', 'is_active', 'is_staff')
     list_filter = ('role', 'is_staff')
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Ek Bilgiler', {'fields': ('role', 'phone_number')}),
+        ('Ek Bilgiler', {'fields': ('role', 'phone_number', 'biometric_enabled')}),
     )
+    inlines = []
+
+class UserNotificationPreferenceInline(admin.StackedInline):
+    model = UserNotificationPreference
+    can_delete = False
+    verbose_name_plural = 'Bildirim Tercihleri'
+
+class CustomerAddressInline(admin.StackedInline):
+    model = CustomerAddress
+    can_delete = False
+    verbose_name_plural = 'Adres Bilgileri'
+
+CustomUserAdmin.inlines = [CustomerAddressInline, UserNotificationPreferenceInline]
 
 
 @admin.register(Category)

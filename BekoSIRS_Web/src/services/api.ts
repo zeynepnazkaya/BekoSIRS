@@ -104,6 +104,7 @@ export const chartsAPI = {
 // ----------------------------------------
 export const salesForecastAPI = {
     getSummary: () => api.get('analytics/forecast/'),
+    getSeasonalAnalysis: () => api.get('analytics/seasonal/'),
 };
 
 // ----------------------------------------

@@ -43,7 +43,8 @@ from products.views import (
     InstallmentViewSet, 
     AuditLogView,
     ChartsView, 
-    SalesForecastView, 
+    SalesForecastView,
+    SeasonalAnalysisView,
     MarketingAutomationView, 
     StockIntelligenceDashboardView,
 )
@@ -107,6 +108,7 @@ urlpatterns = [
     # Analytics Endpoints
     path('analytics/charts/', ChartsView.as_view(), name='analytics-charts'),
     path('analytics/forecast/', SalesForecastView.as_view(), name='analytics-forecast'),
+    path('analytics/seasonal/', SeasonalAnalysisView.as_view(), name='analytics-seasonal'),
     path('analytics/marketing/', MarketingAutomationView.as_view(), name='analytics-marketing'),
     
     # Stock Intelligence

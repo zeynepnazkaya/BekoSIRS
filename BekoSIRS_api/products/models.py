@@ -62,13 +62,8 @@ class CustomUser(AbstractUser):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='customer')
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
 
-    # Bildirim Tercihleri
-    notify_service_updates = models.BooleanField(default=True, verbose_name="Servis Güncellemeleri")
-    notify_price_drops = models.BooleanField(default=True, verbose_name="Fiyat Düşüşleri")
-    notify_restock = models.BooleanField(default=True, verbose_name="Stok Bildirimleri")
-    notify_recommendations = models.BooleanField(default=True, verbose_name="Ürün Önerileri")
-    notify_warranty_expiry = models.BooleanField(default=True, verbose_name="Garanti Süresi Uyarıları")
-    notify_general = models.BooleanField(default=True, verbose_name="Genel Bildirimler")
+    # Bildirim Tercihleri (Taşındı -> UserNotificationPreference)
+    # notify_* fields removed
 
     # Biometric Authentication (Face ID / Face Unlock)
     biometric_enabled = models.BooleanField(default=False, verbose_name="Biyometrik Giriş")
@@ -80,42 +75,11 @@ class CustomUser(AbstractUser):
         help_text="Device identifier for biometric login"
     )
 
-    # Adres Bilgileri (Nakliye için)
-    address = models.TextField(blank=True, null=True, verbose_name="Adres")
-    address_city = models.CharField(max_length=100, blank=True, null=True, verbose_name="Şehir")
-    address_lat = models.DecimalField(
-        max_digits=10, decimal_places=7, null=True, blank=True,
-        verbose_name="Enlem", help_text="Latitude koordinatı"
-    )
-    address_lng = models.DecimalField(
-        max_digits=10, decimal_places=7, null=True, blank=True,
-        verbose_name="Boylam", help_text="Longitude koordinatı"
-    )
+    # Adres Bilgileri (Taşındı -> CustomerAddress)
+    # address_* fields removed
 
-    # KKTC Structured Address (Yeni)
-    district = models.ForeignKey(
-        District, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        verbose_name="İlçe",
-        related_name="customers"
-    )
-    area = models.ForeignKey(
-        Area, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        verbose_name="Mahalle/Köy",
-        related_name="customers"
-    )
-    open_address = models.TextField(
-        blank=True, 
-        null=True, 
-        verbose_name="Açık Adres",
-        help_text="Ev/Apartman numarası, cadde, sokak vb."
-    )
-    geocoded_at = models.DateTimeField(null=True, blank=True, verbose_name="Son Geocode Tarihi")
+    # KKTC Structured Address (Taşındı -> CustomerAddress)
+    # district, area, open_address fields removed
 
     def __str__(self):
         return f"{self.username} ({self.role})"
@@ -630,8 +594,8 @@ class DeliveryRouteStop(models.Model):
 class ProductAssignment(models.Model):
     """Müşteriye atanan/satılan ürünün kaydı."""
     STATUS_CHOICES = (
-        ('PLANNED', 'Planlandı'),
-        ('SCHEDULED', 'Teslimat Atandı'),
+        ('PLANNED', 'Satış Yapıldı'),         # Yeni satış, teslimat henüz planlanmadı
+        ('SCHEDULED', 'Teslimat Planlandı'),  # Teslimat tarihi belirlendi
         ('OUT_FOR_DELIVERY', 'Yolda'),
         ('DELIVERED', 'Teslim Edildi'),
         ('CANCELLED', 'İptal'),
@@ -963,3 +927,84 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.action} - {self.timestamp}"
+
+
+# -------------------------------
+# 🔹 Optimization Models (New)
+# -------------------------------
+class UserNotificationPreference(models.Model):
+    """
+    Separated notification settings to optimize CustomUser table size.
+    """
+    user = models.OneToOneField('CustomUser', on_delete=models.CASCADE, related_name='notification_preferences', verbose_name="Kullanıcı")
+    
+    # Bildirim Tercihleri
+    notify_service_updates = models.BooleanField(default=True, verbose_name="Servis Güncellemeleri")
+    notify_price_drops = models.BooleanField(default=True, verbose_name="Fiyat Düşüşleri")
+    notify_restock = models.BooleanField(default=True, verbose_name="Stok Bildirimleri")
+    notify_recommendations = models.BooleanField(default=True, verbose_name="Ürün Önerileri")
+    notify_warranty_expiry = models.BooleanField(default=True, verbose_name="Garanti Süresi Uyarıları")
+    notify_general = models.BooleanField(default=True, verbose_name="Genel Bildirimler")
+
+    class Meta:
+        verbose_name = "Bildirim Tercihi"
+        verbose_name_plural = "Bildirim Tercihleri"
+
+    def __str__(self):
+        return f"{self.user.username} - Bildirim Ayarları"
+
+
+class CustomerAddress(models.Model):
+    """
+    Separated address information to optimize CustomUser table size.
+    """
+    user = models.OneToOneField('CustomUser', on_delete=models.CASCADE, related_name='customer_address', verbose_name="Kullanıcı")
+    
+    # KKTC Structured Address
+    district = models.ForeignKey(
+        'District', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        verbose_name="İlçe",
+        related_name="customer_addresses"
+    )
+    area = models.ForeignKey(
+        'Area', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        verbose_name="Mahalle/Köy",
+        related_name="customer_addresses"
+    )
+    
+    # Open Address fields
+    open_address = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name="Açık Adres",
+        help_text="Ev/Apartman numarası, cadde, sokak vb."
+    )
+    address_city = models.CharField(max_length=100, blank=True, null=True, verbose_name="Şehir (Legacy)")
+    
+    # Coordinates
+    latitude = models.DecimalField(
+        max_digits=10, decimal_places=7, null=True, blank=True,
+        verbose_name="Enlem", help_text="Latitude koordinatı"
+    )
+    longitude = models.DecimalField(
+        max_digits=10, decimal_places=7, null=True, blank=True,
+        verbose_name="Boylam", help_text="Longitude koordinatı"
+    )
+    
+    geocoded_at = models.DateTimeField(null=True, blank=True, verbose_name="Son Geocode Tarihi")
+
+    class Meta:
+        verbose_name = "Müşteri Adresi"
+        verbose_name_plural = "Müşteri Adresleri"
+
+    def __str__(self):
+        location = self.open_address or "Adres Girilmemiş"
+        if self.district:
+            location += f", {self.district.name}"
+        return f"{self.user.username} - {location}"

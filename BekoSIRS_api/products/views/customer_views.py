@@ -474,11 +474,18 @@ class AreaViewSet(viewsets.ReadOnlyModelViewSet):
 # ---------------------------
 # Customer Management
 # ---------------------------
+from rest_framework.pagination import PageNumberPagination
+
+class CustomerPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+
 class CustomerManagementViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Customer Management.
     
-    list: GET /api/customers/?search=xxx&ordering=first_name
+    list: GET /api/customers/?search=xxx&ordering=first_name&page=1
     retrieve: GET /api/customers/{id}/
     update: PUT/PATCH /api/customers/{id}/
     """
@@ -488,6 +495,7 @@ class CustomerManagementViewSet(viewsets.ModelViewSet):
     from django.db.models import Q
     
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomerPagination
     http_method_names = ['get', 'patch', 'put', 'head', 'options']  # No DELETE or POST
     
     def get_queryset(self):
@@ -497,7 +505,7 @@ class CustomerManagementViewSet(viewsets.ModelViewSet):
         from products.models import CustomUser
         from django.db.models import Q
         
-        queryset = CustomUser.objects.filter(role='customer').select_related('district', 'area')
+        queryset = CustomUser.objects.filter(role='customer').select_related('customer_address__district', 'customer_address__area')
         
         # Search by phone, first_name, or last_name
         search = self.request.query_params.get('search', '').strip()

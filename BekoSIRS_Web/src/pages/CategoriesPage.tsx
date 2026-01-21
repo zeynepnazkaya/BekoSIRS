@@ -184,57 +184,63 @@ export default function CategoriesPage() {
               </div>
             </div>
 
-            {/* Categories Grid */}
+            {/* Categories Table */}
             {filteredCategories.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredCategories.map((category) => (
-                  <div
-                    key={category.id}
-                    className="bg-white rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl transition-all duration-300 overflow-hidden group"
-                  >
-                    <div className="p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
-                            <Tag size={24} className="text-white" />
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kategori Bilgisi</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Açıklama</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">İstatistik</th>
+                      <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">İşlemler</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredCategories.map((category) => (
+                      <tr key={category.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center text-white shadow-sm">
+                              <Tag size={20} />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-bold text-gray-900">{category.name}</div>
+                              <div className="text-xs text-gray-500">ID: #{category.id}</div>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="text-lg font-bold text-gray-900">{category.name}</h3>
-                            <p className="text-sm text-gray-500">ID: #{category.id}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-600 line-clamp-1 max-w-xs">{category.description || "-"}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <Package size={16} className="text-gray-400" />
+                            <span className="text-sm font-medium text-gray-700">{category.product_count || 0} Ürün</span>
                           </div>
-                        </div>
-                      </div>
-
-                      {category.description && (
-                        <p className="text-gray-600 text-sm mb-4 line-clamp-2">{category.description}</p>
-                      )}
-
-                      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                        <div className="flex items-center space-x-2">
-                          <Package size={16} className="text-gray-400" />
-                          <span className="text-sm text-gray-600">
-                            {category.product_count || 0} Ürün
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => openEditModal(category)}
-                            className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCategory(category.id, category.name)}
-                            className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex justify-end space-x-3">
+                            <button
+                              onClick={() => openEditModal(category)}
+                              className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                              title="Düzenle"
+                            >
+                              <Edit2 size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCategory(category.id, category.name)}
+                              className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                              title="Sil"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <div className="text-center py-20">
@@ -260,7 +266,7 @@ export default function CategoriesPage() {
         </main>
       </div>
 
-      {/* Add/Edit Modals aynı şekilde altta kalabilir */}
+      {/* Add/Edit Modals */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full">

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import * as Lucide from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import { ToastContainer, type ToastType } from "../components/Toast";
-import api, { installmentAPI, productAPI, customerAPI } from "../services/api";
+import api, { installmentAPI, customerAPI } from "../services/api";
 
 const {
     CreditCard = () => <span>💳</span>,
@@ -70,7 +70,7 @@ export default function InstallmentPlansPage() {
     // Creation Modal State
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [customers, setCustomers] = useState<any[]>([]);
-    const [products, setProducts] = useState<any[]>([]);
+    const [customerAssignments, setCustomerAssignments] = useState<any[]>([]);
     const [createForm, setCreateForm] = useState({
         customer: "",
         product: "",
@@ -80,23 +80,35 @@ export default function InstallmentPlansPage() {
     });
     const [creating, setCreating] = useState(false);
 
-    // Derived state for Total Amount
-    const selectedProductPrice = useMemo(() => {
-        const prod = products.find(p => p.id === Number(createForm.product));
-        return prod ? parseFloat(prod.price) : 0;
-    }, [createForm.product, products]);
+    // Derived state for Total Amount - now from assignment's product
+    const selectedAssignmentPrice = useMemo(() => {
+        const assignment = customerAssignments.find(a => a.id === Number(createForm.product));
+        return assignment?.product?.price || 0;
+    }, [createForm.product, customerAssignments]);
 
     const fetchDropdowns = async () => {
         try {
-            const [custRes, prodRes] = await Promise.all([
-                customerAPI.list(),
-                productAPI.list()
-            ]);
+            const custRes = await customerAPI.list();
             setCustomers(custRes.data.results || custRes.data);
-            setProducts(prodRes.data.results || prodRes.data);
         } catch (error) {
-            console.error("Error fetching dropdowns:", error);
-            showToast("error", "Müşteri ve ürün listesi alınamadı");
+            console.error("Error fetching customers:", error);
+            showToast("error", "Müşteri listesi alınamadı");
+        }
+    };
+
+    // Fetch customer's assigned products when customer is selected
+    const fetchCustomerAssignments = async (customerId: number) => {
+        try {
+            const response = await api.get(`/assignments/?customer=${customerId}`);
+            const assignments = response.data.results || response.data;
+            // Filter to only PLANNED or SCHEDULED - not yet delivered
+            const availableAssignments = assignments.filter((a: any) =>
+                a.status === 'PLANNED' || a.status === 'SCHEDULED'
+            );
+            setCustomerAssignments(availableAssignments);
+        } catch (error) {
+            console.error("Error fetching assignments:", error);
+            setCustomerAssignments([]);
         }
     };
 
@@ -110,10 +122,13 @@ export default function InstallmentPlansPage() {
         setCreating(true);
 
         try {
+            // Get assignment to send assignment_id instead of product_id
+            const selectedAssignment = customerAssignments.find(a => a.id === Number(createForm.product));
             const payload = {
                 customer: Number(createForm.customer),
-                product: Number(createForm.product),
-                total_amount: selectedProductPrice,
+                product: selectedAssignment?.product?.id, // product_id from nested product object
+                assignment: Number(createForm.product), // assignment_id
+                total_amount: selectedAssignmentPrice,
                 down_payment: Number(createForm.down_payment) || 0,
                 installment_count: Number(createForm.installment_count),
                 start_date: createForm.start_date
@@ -519,7 +534,15 @@ export default function InstallmentPlansPage() {
                                         required
                                         className="w-full border-gray-300 rounded-lg focus:ring-black focus:border-black"
                                         value={createForm.customer}
-                                        onChange={e => setCreateForm({ ...createForm, customer: e.target.value })}
+                                        onChange={e => {
+                                            const customerId = e.target.value;
+                                            setCreateForm({ ...createForm, customer: customerId, product: "" });
+                                            if (customerId) {
+                                                fetchCustomerAssignments(Number(customerId));
+                                            } else {
+                                                setCustomerAssignments([]);
+                                            }
+                                        }}
                                     >
                                         <option value="">Seçiniz</option>
                                         {customers.map((c: any) => (
@@ -529,18 +552,24 @@ export default function InstallmentPlansPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Ürün</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Atanmış Ürün</label>
                                     <select
                                         required
-                                        className="w-full border-gray-300 rounded-lg focus:ring-black focus:border-black"
+                                        disabled={!createForm.customer}
+                                        className="w-full border-gray-300 rounded-lg focus:ring-black focus:border-black disabled:bg-gray-100"
                                         value={createForm.product}
                                         onChange={e => setCreateForm({ ...createForm, product: e.target.value })}
                                     >
-                                        <option value="">Seçiniz</option>
-                                        {products.map((p: any) => (
-                                            <option key={p.id} value={p.id}>{p.name} - {p.price} TL</option>
+                                        <option value="">{createForm.customer ? "Atanmış ürün seçiniz" : "Önce müşteri seçin"}</option>
+                                        {customerAssignments.map((a: any) => (
+                                            <option key={a.id} value={a.id}>
+                                                {a.product?.name} - {a.product?.price} TL ({a.status_display})
+                                            </option>
                                         ))}
                                     </select>
+                                    {createForm.customer && customerAssignments.length === 0 && (
+                                        <p className="text-xs text-orange-600 mt-1">Bu müşteriye atanmış ürün bulunmuyor</p>
+                                    )}
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
@@ -549,7 +578,7 @@ export default function InstallmentPlansPage() {
                                         <input
                                             type="text"
                                             disabled
-                                            value={`${selectedProductPrice} TL`}
+                                            value={`${selectedAssignmentPrice} TL`}
                                             className="w-full bg-gray-100 border-gray-300 rounded-lg text-gray-500"
                                         />
                                     </div>
@@ -558,7 +587,7 @@ export default function InstallmentPlansPage() {
                                         <input
                                             type="number"
                                             min="0"
-                                            max={selectedProductPrice}
+                                            max={selectedAssignmentPrice}
                                             required
                                             className="w-full border-gray-300 rounded-lg focus:ring-black focus:border-black"
                                             value={createForm.down_payment}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { UserCheck, Search, Eye, Edit2, ArrowUpDown } from "lucide-react";
+import { UserCheck, Search, Eye, Edit2, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import ViewCustomerModal from "../components/ViewCustomerModal";
 import EditCustomerModal from "../components/EditCustomerModal";
@@ -15,18 +15,26 @@ export default function CustomersPage() {
     const [showViewModal, setShowViewModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalCount, setTotalCount] = useState(0);
+    const pageSize = 10;
+    const totalPages = Math.ceil(totalCount / pageSize);
+
     useEffect(() => {
         fetchCustomers();
-    }, [ordering]);
+    }, [ordering, currentPage]);
 
     const fetchCustomers = async () => {
         try {
             setLoading(true);
-            const data = await customerService.getCustomers({
+            const response = await customerService.getCustomers({
                 search: searchTerm,
                 ordering,
+                page: currentPage,
             });
-            setCustomers(data);
+            setCustomers(response.results);
+            setTotalCount(response.count);
         } catch (error) {
             console.error("Error fetching customers:", error);
         } finally {
@@ -35,12 +43,14 @@ export default function CustomersPage() {
     };
 
     const handleSearch = () => {
+        setCurrentPage(1);
         fetchCustomers();
     };
 
     const handleClearFilters = () => {
         setSearchTerm("");
         setOrdering("first_name");
+        setCurrentPage(1);
         setTimeout(() => fetchCustomers(), 0);
     };
 
@@ -241,6 +251,37 @@ export default function CustomersPage() {
                             </table>
                         </div>
                     </div>
+
+                    {/* Pagination Controls */}
+                    {totalCount > 0 && (
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mt-4">
+                            <div className="flex items-center justify-between">
+                                <div className="text-sm text-gray-600">
+                                    Toplam <span className="font-semibold">{totalCount}</span> müşteri
+                                    <span className="mx-2">•</span>
+                                    Sayfa <span className="font-semibold">{currentPage}</span> / {totalPages}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                        disabled={currentPage === 1}
+                                        className="flex items-center gap-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        <ChevronLeft size={16} />
+                                        Önceki
+                                    </button>
+                                    <button
+                                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                        disabled={currentPage >= totalPages}
+                                        className="flex items-center gap-1 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Sonraki
+                                        <ChevronRight size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </main>
             </div>
 

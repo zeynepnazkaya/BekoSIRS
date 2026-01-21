@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from "../components/Sidebar";
 import StockIntelligenceWidget from "../components/StockIntelligenceWidget";
 import { KpiCard, SimpleBarChart } from "./DashboardComponents";
-import { BarChart3, TrendingUp, Users, Mail, FileText, RefreshCw, Play, Eye } from "lucide-react";
+import { ProfessionalSalesChart } from "../components/ProfessionalCharts";
+import { BarChart3, TrendingUp, Users, Mail, FileText, RefreshCw, Snowflake, Play } from "lucide-react";
 import {
     chartsAPI,
     salesForecastAPI,
@@ -11,7 +12,7 @@ import {
 } from '../services/api';
 
 // Tab Types
-type TabType = 'charts' | 'forecast' | 'marketing' | 'audit' | 'stock';
+type TabType = 'charts' | 'forecast' | 'seasonal' | 'marketing' | 'audit' | 'stock';
 
 export default function AnalyticsPage() {
     const [activeTab, setActiveTab] = useState<TabType>('charts');
@@ -21,6 +22,7 @@ export default function AnalyticsPage() {
     // Data states
     const [chartsData, setChartsData] = useState<any>(null);
     const [forecastData, setForecastData] = useState<any>(null);
+    const [seasonalData, setSeasonalData] = useState<any>(null);
     const [marketingData, setMarketingData] = useState<any>(null);
     const [auditData, setAuditData] = useState<any>(null);
 
@@ -41,6 +43,10 @@ export default function AnalyticsPage() {
                     case 'forecast':
                         const forecast = await salesForecastAPI.getSummary();
                         setForecastData(forecast.data);
+                        break;
+                    case 'seasonal':
+                        const seasonal = await salesForecastAPI.getSeasonalAnalysis();
+                        setSeasonalData(seasonal.data);
                         break;
                     case 'marketing':
                         const marketing = await marketingAPI.getStats();
@@ -64,6 +70,7 @@ export default function AnalyticsPage() {
         { id: 'charts' as TabType, label: 'Dashboard Grafikleri', icon: BarChart3 },
         { id: 'stock' as TabType, label: 'Stok Zekası', icon: TrendingUp },
         { id: 'forecast' as TabType, label: 'Satış Tahmini', icon: Play },
+        { id: 'seasonal' as TabType, label: 'Mevsimsel Analiz', icon: Snowflake },
         { id: 'marketing' as TabType, label: 'Pazarlama', icon: Mail },
         { id: 'audit' as TabType, label: 'Denetim Kayıtları', icon: FileText },
     ];
@@ -125,6 +132,7 @@ export default function AnalyticsPage() {
                                 {activeTab === 'charts' && <ChartsContent data={chartsData} />}
                                 {activeTab === 'stock' && <StockIntelligenceWidget />}
                                 {activeTab === 'forecast' && <ForecastContent data={forecastData} />}
+                                {activeTab === 'seasonal' && <SeasonalContent data={seasonalData} />}
                                 {activeTab === 'marketing' && <MarketingContent data={marketingData} />}
                                 {activeTab === 'audit' && <AuditContent data={auditData} />}
                             </>
@@ -337,86 +345,75 @@ const ForecastContent: React.FC<{ data: any }> = ({ data }) => {
 // Marketing Content
 // ==========================================
 const MarketingContent: React.FC<{ data: any }> = ({ data }) => {
-    const [runningCampaign, setRunningCampaign] = useState<string | null>(null);
-    const [result, setResult] = useState<any>(null);
+    const [activePeriod, setActivePeriod] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
 
     if (!data) return <EmptyState />;
 
-    const campaigns = data.campaigns || {};
+    const salesChart = data.sales_chart || { weekly: [], monthly: [], yearly: [] };
 
-    const runCampaign = async (campaignKey: string, dryRun: boolean = true) => {
-        setRunningCampaign(campaignKey);
-        try {
-            const response = await marketingAPI.runCampaign(campaignKey as any, dryRun);
-            setResult({ campaign: campaignKey, ...response.data });
-        } catch (err: any) {
-            setResult({ error: err.message });
-        } finally {
-            setRunningCampaign(null);
-        }
-    };
-
-    const campaignCards = [
-        { key: 'birthday', name: 'Doğum Günü', icon: '🎂', desc: 'Doğum günü yaklaşanlara indirim', color: 'yellow' },
-        { key: 'churn_prevention', name: 'Kayıp Önleme', icon: '💔', desc: '90+ gün inaktif müşteriler', color: 'red' },
-        { key: 'review_request', name: 'Yorum İsteği', icon: '⭐', desc: 'Son 30 günde alışveriş yapanlar', color: 'purple' },
-        { key: 'welcome', name: 'Hoş Geldin', icon: '🎉', desc: 'Son 7 günde kayıt olanlar', color: 'green' },
-        { key: 'installment_reminder', name: 'Taksit Hatırlatma', icon: '💳', desc: '7 gün içinde ödeme vadesi', color: 'blue' },
-        { key: 'delivery_feedback', name: 'Teslimat Geri Bildirimi', icon: '📦', desc: 'Son 30 günde teslimat alanlar', color: 'teal' },
-    ];
+    // Prepare chart data
+    const currentChartData = salesChart[activePeriod] || [];
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {campaignCards.map(card => {
-                    const campaign = campaigns[card.key] || {};
-                    return (
-                        <div key={card.key} className={`bg-white border-2 border-${card.color}-200 rounded-2xl p-6`}>
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <span className="text-3xl">{card.icon}</span>
-                                    <h3 className="font-bold text-gray-900 mt-2">{card.name}</h3>
-                                    <p className="text-sm text-gray-500">{card.desc}</p>
-                                </div>
-                                <div className={`bg-${card.color}-100 text-${card.color}-700 px-4 py-2 rounded-full font-bold`}>
-                                    {campaign.eligible || 0} müşteri
-                                </div>
-                            </div>
-                            <div className="flex gap-3 mt-4">
-                                <button
-                                    onClick={() => runCampaign(card.key, true)}
-                                    disabled={runningCampaign === card.key}
-                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors disabled:opacity-50"
-                                >
-                                    <Eye size={16} />
-                                    Test Et
-                                </button>
-                                <button
-                                    onClick={() => runCampaign(card.key, false)}
-                                    disabled={runningCampaign === card.key}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-${card.color}-600 hover:bg-${card.color}-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50`}
-                                >
-                                    <Play size={16} />
-                                    {runningCampaign === card.key ? 'Çalışıyor...' : 'Gönder'}
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+            {/* Sales Chart Section - Professional */}
+            <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl shadow-sm p-6 border border-gray-200">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h3 className="font-bold text-gray-900 text-xl flex items-center gap-2">
+                            📊 Satış Performans Analizi
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">Pazarlama stratejilerinizi belirlemek için satış trendlerini inceleyin</p>
+                    </div>
 
-            {/* Result */}
-            {result && (
-                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-                    <h3 className="font-bold text-gray-900 mb-4">📊 Kampanya Sonucu</h3>
-                    <pre className="bg-gray-50 p-4 rounded-xl text-sm overflow-auto">
-                        {JSON.stringify(result, null, 2)}
-                    </pre>
+                    <div className="flex bg-white p-1.5 rounded-xl shadow-sm self-start md:self-auto">
+                        <button
+                            onClick={() => setActivePeriod('weekly')}
+                            className={`px-5 py-2 text-sm font-medium rounded-lg transition-all ${activePeriod === 'weekly'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            Haftalık
+                        </button>
+                        <button
+                            onClick={() => setActivePeriod('monthly')}
+                            className={`px-5 py-2 text-sm font-medium rounded-lg transition-all ${activePeriod === 'monthly'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            Aylık
+                        </button>
+                        <button
+                            onClick={() => setActivePeriod('yearly')}
+                            className={`px-5 py-2 text-sm font-medium rounded-lg transition-all ${activePeriod === 'yearly'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            Yıllık
+                        </button>
+                    </div>
                 </div>
-            )}
+
+                {currentChartData.length > 0 ? (
+                    <ProfessionalSalesChart
+                        data={currentChartData}
+                        period={activePeriod}
+                        showRevenue={false}
+                    />
+                ) : (
+                    <div className="h-[400px] flex items-center justify-center text-gray-400 bg-white rounded-xl">
+                        <div className="text-center">
+                            <div className="text-6xl mb-4">📊</div>
+                            <p className="text-lg font-medium">Veri bulunamadı</p>
+                            <p className="text-sm">Seçilen dönem için satış verisi yok</p>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
+
 
 // ==========================================
 // Audit Content
@@ -480,6 +477,125 @@ const AuditContent: React.FC<{ data: any }> = ({ data }) => {
                     </tbody>
                 </table>
             </div>
+        </div>
+    );
+};
+
+// ==========================================
+// Seasonal Content - Heat Map
+// ==========================================
+const SeasonalContent: React.FC<{ data: any }> = ({ data }) => {
+    if (!data) return <EmptyState />;
+
+    const products = data.seasonal_products || [];
+    const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+        "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+    // Heat map color based on sales intensity (0-max)
+    const getHeatColor = (value: number, maxValue: number) => {
+        if (value === 0) return 'bg-gray-50 text-gray-400';
+        const intensity = maxValue > 0 ? value / maxValue : 0;
+        if (intensity >= 0.8) return 'bg-blue-600 text-white font-bold';
+        if (intensity >= 0.6) return 'bg-blue-500 text-white';
+        if (intensity >= 0.4) return 'bg-blue-400 text-white';
+        if (intensity >= 0.2) return 'bg-blue-200 text-blue-900';
+        return 'bg-blue-100 text-blue-700';
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Category Summary */}
+            {data.category_summary && Object.keys(data.category_summary).length > 0 && (
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+                    <h3 className="font-bold text-gray-900 mb-4">📊 Kategori Bazlı Mevsimsellik</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {Object.entries(data.category_summary).map(([category, info]: [string, any]) => (
+                            <div key={category} className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100">
+                                <p className="font-medium text-gray-900">{category}</p>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    {info.products_count} ürün
+                                </p>
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {info.peak_months?.map((month: string) => (
+                                        <span key={month} className="px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">
+                                            {month}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Heat Map Table */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100">
+                    <h3 className="font-bold text-gray-900">🗓️ Aylık Satış Isı Haritası</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Her ürünün hangi aylarda daha çok sattığını gösterir
+                    </p>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-3 text-left font-semibold text-gray-600 sticky left-0 bg-gray-50 min-w-[200px]">Ürün</th>
+                                {months.map(month => (
+                                    <th key={month} className="px-2 py-3 text-center font-semibold text-gray-600 min-w-[60px]">
+                                        {month.substring(0, 3)}
+                                    </th>
+                                ))}
+                                <th className="px-4 py-3 text-center font-semibold text-gray-600">Toplam</th>
+                                <th className="px-4 py-3 text-left font-semibold text-gray-600">Öneri</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {products.length === 0 ? (
+                                <tr>
+                                    <td colSpan={15} className="px-6 py-12 text-center text-gray-500">
+                                        Henüz yeterli satış verisi yok
+                                    </td>
+                                </tr>
+                            ) : (
+                                products.map((product: any, idx: number) => {
+                                    const monthlySales = product.monthly_sales || {};
+                                    const maxSale = Math.max(...Object.values(monthlySales) as number[]);
+
+                                    return (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 sticky left-0 bg-white">
+                                                <p className="font-medium text-gray-900 truncate max-w-[200px]">{product.product_name}</p>
+                                                <p className="text-xs text-gray-500">{product.category}</p>
+                                            </td>
+                                            {months.map(month => (
+                                                <td key={month} className="px-1 py-1 text-center">
+                                                    <div className={`py-2 rounded ${getHeatColor(monthlySales[month] || 0, maxSale)}`}>
+                                                        {monthlySales[month] || 0}
+                                                    </div>
+                                                </td>
+                                            ))}
+                                            <td className="px-4 py-3 text-center font-bold text-gray-900">
+                                                {product.total_year_sales}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className="text-xs text-gray-600">{product.recommendation}</span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Data Period Info */}
+            {data.data_period && (
+                <div className="text-center text-sm text-gray-400">
+                    Veri Dönemi: {data.data_period.start} → {data.data_period.end}
+                </div>
+            )}
         </div>
     );
 };

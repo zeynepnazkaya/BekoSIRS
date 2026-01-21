@@ -228,13 +228,14 @@ export default function AssignmentsPage() {
 
         // Tab filtering
         if (activeTab === 'PLANNED') {
-            // Planlanacak sekmesinde: Statüsü PLANNED olanlar VE Henüz teslimat planı OLMAYANLAR
-            filtered = filtered.filter(a => a.status === 'PLANNED' && !a.delivery_info);
+            // Planlanacak sekmesinde: Statüsü PLANNED olanlar VE Henüz teslimat tarihi OLMAYANLAR
+            // (delivery_info olabilir ama scheduled_date null ise henüz planlanmamış sayılır)
+            filtered = filtered.filter(a => a.status === 'PLANNED' && !a.delivery_info?.scheduled_date);
         } else {
             // Diğer sekmeler (SCHEDULED, OUT_FOR_DELIVERY, DELIVERED)
-            // Ya statüsü eşleşenler YA DA (SCHEDULED için) statüsü PLANNED olup teslimat planı olanlar (Veri tutarsızlığı varsa burada görünsün)
             if (activeTab === 'SCHEDULED') {
-                filtered = filtered.filter(a => a.status === 'SCHEDULED' || (a.status === 'PLANNED' && a.delivery_info));
+                // Teslimat Bekleyen: Statüsü SCHEDULED olanlar VEYA PLANNED ama teslimat tarihi var
+                filtered = filtered.filter(a => a.status === 'SCHEDULED' || (a.status === 'PLANNED' && a.delivery_info?.scheduled_date));
             } else {
                 filtered = filtered.filter(a => a.status === activeTab);
             }

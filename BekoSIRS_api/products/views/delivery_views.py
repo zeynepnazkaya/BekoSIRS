@@ -103,23 +103,33 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                # Check if delivery already exists
-                if hasattr(assignment, 'delivery'):
-                     return Response({'error': 'Bu satış için zaten bir teslimat planı mevcut.'}, status=status.HTTP_400_BAD_REQUEST)
-
-                # Update assignment status
-                assignment.status = 'SCHEDULED'
-                assignment.save()
-
-                # Create delivery
-                delivery = Delivery.objects.create(
-                    assignment=assignment,
-                    scheduled_date=scheduled_date, # Model field
-                    address=request.data.get('address', assignment.customer.open_address or ''),
-                    address_lat=request.data.get('address_lat', assignment.customer.address_lat),
-                    address_lng=request.data.get('address_lng', assignment.customer.address_lng),
-                    status='WAITING'
-                )
+                # Check if delivery already exists (hasattr always returns True for OneToOne)
+                try:
+                    existing_delivery = assignment.delivery
+                    # Eğer delivery var ama tarih yoksa (orphan kayıt), güncellemeye izin ver
+                    if existing_delivery.scheduled_date:
+                         return Response({'error': 'Bu satış için zaten bir teslimat planı mevcut.'}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Orphan kaydı güncelle
+                    delivery = existing_delivery
+                    delivery.scheduled_date = scheduled_date
+                    delivery.address = request.data.get('address', assignment.customer.open_address or '')
+                    delivery.address_lat = request.data.get('address_lat', assignment.customer.address_lat)
+                    delivery.address_lng = request.data.get('address_lng', assignment.customer.address_lng)
+                    delivery.status = 'WAITING'
+                    delivery.save()
+                    created = False # It was updated, not created
+                except Delivery.DoesNotExist:
+                    # Yeni kayıt oluştur
+                    delivery = Delivery.objects.create(
+                        assignment=assignment,
+                        scheduled_date=scheduled_date, # Model field
+                        address=request.data.get('address', assignment.customer.open_address or ''),
+                        address_lat=request.data.get('address_lat', assignment.customer.address_lat),
+                        address_lng=request.data.get('address_lng', assignment.customer.address_lng),
+                        status='WAITING'
+                    )
+                    created = True
                 
                 serializer = self.get_serializer(delivery)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)

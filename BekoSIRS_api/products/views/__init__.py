@@ -67,6 +67,7 @@ from .delivery_views import (
 from .analytics_views import (
     ChartsView,
     SalesForecastView,
+    SeasonalAnalysisView,
     MarketingAutomationView,
     AuditLogView
 )
@@ -116,7 +117,8 @@ __all__ = [
     'ProductAssignmentViewSet',
     # Analytics & Installments
     'ChartsView', 
-    'SalesForecastView', 
+    'SalesForecastView',
+    'SeasonalAnalysisView',
     'MarketingAutomationView', 
     'AuditLogView',
     'InstallmentPlanViewSet', 

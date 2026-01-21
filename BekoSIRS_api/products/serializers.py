@@ -257,16 +257,21 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     def get_customer_address(self, obj):
         """Build customer address from various fields."""
         customer = obj.customer
-        parts = []
-        if customer.open_address:
-            parts.append(customer.open_address)
-        if hasattr(customer, 'area') and customer.area:
-            parts.append(customer.area.name)
-        if hasattr(customer, 'district') and customer.district:
-            parts.append(customer.district.name)
-        if customer.address:
-            return customer.address
-        return ", ".join(parts) if parts else None
+        
+        # New Address Model Logic
+        if hasattr(customer, 'customer_address'):
+            addr = customer.customer_address
+            parts = []
+            if addr.open_address:
+                parts.append(addr.open_address)
+            if addr.area:
+                parts.append(addr.area.name)
+            if addr.district:
+                parts.append(addr.district.name)
+            
+            return ", ".join(parts) if parts else None
+            
+        return None
 
 
 class ServiceRequestCreateSerializer(serializers.ModelSerializer):
@@ -392,9 +397,13 @@ class AreaSerializer(serializers.ModelSerializer):
 # ---------------------------
 class CustomerListSerializer(serializers.ModelSerializer):
     """List serializer for customers with basic info"""
-    district_name = serializers.CharField(source='district.name', read_only=True)
-    area_name = serializers.CharField(source='area.name', read_only=True)
+    district_name = serializers.CharField(source='customer_address.district.name', read_only=True)
+    area_name = serializers.CharField(source='customer_address.area.name', read_only=True)
     full_name = serializers.SerializerMethodField()
+    
+    # Expose ID for frontend filters
+    district = serializers.PrimaryKeyRelatedField(source='customer_address.district', read_only=True)
+    area = serializers.PrimaryKeyRelatedField(source='customer_address.area', read_only=True)
     
     class Meta:
         model = CustomUser
@@ -411,8 +420,24 @@ class CustomerListSerializer(serializers.ModelSerializer):
 
 class CustomerDetailSerializer(serializers.ModelSerializer):
     """Detail serializer for customer with all information"""
-    district_name = serializers.CharField(source='district.name', read_only=True)
-    area_name = serializers.CharField(source='area.name', read_only=True)
+    # Address Info
+    district = serializers.PrimaryKeyRelatedField(source='customer_address.district', read_only=True)
+    district_name = serializers.CharField(source='customer_address.district.name', read_only=True)
+    area = serializers.PrimaryKeyRelatedField(source='customer_address.area', read_only=True)
+    area_name = serializers.CharField(source='customer_address.area.name', read_only=True)
+    open_address = serializers.CharField(source='customer_address.open_address', read_only=True)
+    address_city = serializers.CharField(source='customer_address.address_city', read_only=True)
+    address_lat = serializers.DecimalField(max_digits=10, decimal_places=7, source='customer_address.latitude', read_only=True)
+    address_lng = serializers.DecimalField(max_digits=10, decimal_places=7, source='customer_address.longitude', read_only=True)
+    
+    # Notification Preferences
+    notify_service_updates = serializers.BooleanField(source='notification_preferences.notify_service_updates', read_only=True)
+    notify_price_drops = serializers.BooleanField(source='notification_preferences.notify_price_drops', read_only=True)
+    notify_restock = serializers.BooleanField(source='notification_preferences.notify_restock', read_only=True)
+    notify_recommendations = serializers.BooleanField(source='notification_preferences.notify_recommendations', read_only=True)
+    notify_warranty_expiry = serializers.BooleanField(source='notification_preferences.notify_warranty_expiry', read_only=True)
+    notify_general = serializers.BooleanField(source='notification_preferences.notify_general', read_only=True)
+    
     full_name = serializers.SerializerMethodField()
     
     class Meta:
@@ -421,7 +446,7 @@ class CustomerDetailSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
             'phone_number', 'role', 'is_active',
             'district', 'district_name', 'area', 'area_name', 'open_address',
-            'address', 'address_city', 'address_lat', 'address_lng',
+            'address_city', 'address_lat', 'address_lng',
             'notify_service_updates', 'notify_price_drops', 'notify_restock',
             'notify_recommendations', 'notify_warranty_expiry', 'notify_general',
             'biometric_enabled', 'date_joined', 'last_login'
@@ -436,6 +461,34 @@ class CustomerDetailSerializer(serializers.ModelSerializer):
 class CustomerUpdateSerializer(serializers.ModelSerializer):
     """Update serializer for customer PATCH/PUT operations"""
     
+    # Address Fields (Mapped to CustomerAddress model via source)
+    district = serializers.PrimaryKeyRelatedField(
+        queryset=District.objects.all(), required=False, allow_null=True, source='customer_address.district'
+    )
+    area = serializers.PrimaryKeyRelatedField(
+        queryset=Area.objects.all(), required=False, allow_null=True, source='customer_address.area'
+    )
+    open_address = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, source='customer_address.open_address'
+    )
+    address_city = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, source='customer_address.address_city'
+    )
+    address_lat = serializers.DecimalField(
+        max_digits=10, decimal_places=7, required=False, allow_null=True, source='customer_address.latitude'
+    )
+    address_lng = serializers.DecimalField(
+        max_digits=10, decimal_places=7, required=False, allow_null=True, source='customer_address.longitude'
+    )
+
+    # Notification Fields (Mapped to UserNotificationPreference model via source)
+    notify_service_updates = serializers.BooleanField(required=False, source='notification_preferences.notify_service_updates')
+    notify_price_drops = serializers.BooleanField(required=False, source='notification_preferences.notify_price_drops')
+    notify_restock = serializers.BooleanField(required=False, source='notification_preferences.notify_restock')
+    notify_recommendations = serializers.BooleanField(required=False, source='notification_preferences.notify_recommendations')
+    notify_warranty_expiry = serializers.BooleanField(required=False, source='notification_preferences.notify_warranty_expiry')
+    notify_general = serializers.BooleanField(required=False, source='notification_preferences.notify_general')
+
     class Meta:
         model = CustomUser
         fields = [
@@ -448,18 +501,32 @@ class CustomerUpdateSerializer(serializers.ModelSerializer):
     
     def validate(self, attrs):
         """Validate that area belongs to selected district"""
-        district = attrs.get('district')
-        area = attrs.get('area')
+        # When using source accessing attrs is slightly different because they are nested
+        # We need to look at what DRF parsed.
         
-        # If area is provided, district must also be provided
+        # Extract address data if present
+        addr_data = attrs.get('customer_address', {})
+        
+        # Access nested fields if available, otherwise check instance
+        district = addr_data.get('district')
+        area = addr_data.get('area')
+        
+        # If not in attrs, might be in instance (but we are validating input)
+        # However, for partial updates, we might need to check existing state?
+        # Keeping it simple mostly focused on what's sent.
+        
         if area and not district:
             # Check if instance has district
-            if not (self.instance and self.instance.district):
+            current_district = self.instance.customer_address.district if hasattr(self.instance, 'customer_address') else None
+            # Fallback to old field if not migrated yet (safety)
+            if not current_district and hasattr(self.instance, 'district'):
+                current_district = self.instance.district
+                
+            if not current_district:
                 raise serializers.ValidationError({
                     'area': 'Mahalle seçmek için önce ilçe seçmelisiniz.'
                 })
         
-        # Validate area belongs to district
         if area and district:
             if area.district != district:
                 raise serializers.ValidationError({
@@ -467,6 +534,34 @@ class CustomerUpdateSerializer(serializers.ModelSerializer):
                 })
         
         return attrs
+
+    def update(self, instance, validated_data):
+        # Extract nested data
+        address_data = validated_data.pop('customer_address', {})
+        prefs_data = validated_data.pop('notification_preferences', {})
+        
+        # Update User fields
+        instance = super().update(instance, validated_data)
+        
+        # Update Address Relationship
+        if address_data:
+            # Auto-populate legacy city field from district if present
+            if 'district' in address_data and address_data['district']:
+                address_data['address_city'] = address_data['district'].name
+                
+            CustomerAddress.objects.update_or_create(
+                user=instance,
+                defaults=address_data
+            )
+            
+        # Update Preferences Relationship
+        if prefs_data:
+            UserNotificationPreference.objects.update_or_create(
+                user=instance,
+                defaults=prefs_data
+            )
+            
+        return instance
 
 
 # ---------------------------
@@ -479,22 +574,26 @@ class CustomerSummarySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'first_name', 'last_name', 'full_name', 'email', 'phone_number', 'address', 'formatted_address']
+        fields = ['id', 'username', 'first_name', 'last_name', 'full_name', 'email', 'phone_number', 'formatted_address']
         
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
 
     def get_formatted_address(self, obj):
-        if obj.address:
-            return obj.address
+        if not hasattr(obj, 'customer_address'):
+            return ""
         
+        addr = obj.customer_address
+        if not addr:
+            return ""
+
         parts = []
-        if obj.open_address:
-            parts.append(obj.open_address)
-        if obj.area:
-            parts.append(obj.area.name)
-        if obj.district:
-            parts.append(obj.district.name)
+        if addr.open_address:
+            parts.append(addr.open_address)
+        if addr.area:
+            parts.append(addr.area.name)
+        if addr.district:
+            parts.append(addr.district.name)
         
         return ", ".join(parts) if parts else ""
 
@@ -520,16 +619,18 @@ class ProductAssignmentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'assigned_at', 'assigned_by']
 
     def get_delivery_info(self, obj):
-        if hasattr(obj, 'delivery'):
+        try:
+            delivery = obj.delivery
             return {
-                'id': obj.delivery.id,
-                'status': obj.delivery.status,
-                'status_display': obj.delivery.get_status_display(),
-                'scheduled_date': obj.delivery.scheduled_date,
-                'time_window_start': obj.delivery.time_window_start,
-                'time_window_end': obj.delivery.time_window_end
+                'id': delivery.id,
+                'status': delivery.status,
+                'status_display': delivery.get_status_display(),
+                'scheduled_date': delivery.scheduled_date,
+                'time_window_start': delivery.time_window_start,
+                'time_window_end': delivery.time_window_end
             }
-        return None
+        except:
+            return None
 
 
 class DeliverySerializer(serializers.ModelSerializer):
@@ -544,6 +645,7 @@ class DeliverySerializer(serializers.ModelSerializer):
             'scheduled_date', 'time_window_start', 'time_window_end',
             'status', 'status_display', 'delivered_at', 'delivered_by',
             'delivery_order', 'route_batch_id', 'distance_km', 'eta_minutes',
+            'address', 'address_lat', 'address_lng',  # Location fields for frontend
             'customer_phone_snapshot', 'address_snapshot'
         ]
         read_only_fields = ['id', 'created_at']

@@ -13,6 +13,7 @@ import {
   MapPin,
   FileText,
   ChevronDown,
+  Archive,
 } from "lucide-react";
 import api from "../services/api";
 
@@ -62,12 +63,23 @@ const requestTypeLabels: Record<string, string> = {
   other: "Diğer",
 };
 
+// Tabs configuration
+const tabs = [
+  { id: 'all', label: 'Tümü (Aktif)' },
+  { id: 'repair', label: 'Tamir' },
+  { id: 'maintenance', label: 'Bakım' },
+  { id: 'warranty', label: 'Garanti' },
+  { id: 'complaint', label: 'Şikayet' },
+  { id: 'history', label: 'Geçmiş / Tamamlanan' },
+];
+
 export default function ServiceRequestsPage() {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Tümü");
+  const [activeTab, setActiveTab] = useState("all");
 
   // Detail panel state
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
@@ -81,6 +93,7 @@ export default function ServiceRequestsPage() {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       const response = await api.get("/service-requests/");
       const requestsArray = Array.isArray(response.data) ? response.data : response.data.results || [];
       setRequests(requestsArray);
@@ -115,11 +128,14 @@ export default function ServiceRequestsPage() {
         await api.patch(`/service-requests/${selectedRequest.id}/`, { status: "pending" });
       }
 
-      await fetchData();
-      // Update selected request with new data
-      const updated = requests.find(r => r.id === selectedRequest.id);
-      if (updated) setSelectedRequest({ ...updated, status: newStatus });
-      else setShowDetailPanel(false);
+      await fetchData(); // Refresh data to update lists/tabs
+
+      // Update selected request copy locally
+      const updated = { ...selectedRequest, status: newStatus };
+      setSelectedRequest(updated);
+
+      // If moved to completed/cancelled and we are in active tab, maybe close panel or warn?
+      // For now just keeping it open.
     } catch (err: any) {
       alert(err.response?.data?.error || "İşlem başarısız");
     } finally {
@@ -144,20 +160,43 @@ export default function ServiceRequestsPage() {
     }
   };
 
+  // Check if a request is "Active" (Pending/In Progress)
+  const isActiveRequest = (status: string) => {
+    return ['pending', 'in_queue', 'in_progress'].includes(status);
+  };
+
   const filteredRequests = requests.filter((req) => {
+    // 1. Text Search
     const matchesSearch =
       req.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.description?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    // Map filter to actual statuses
+    // 2. Status Filter (Dropdown)
     let matchesStatus = statusFilter === "Tümü";
     if (statusFilter === "pending") matchesStatus = req.status === "pending" || req.status === "in_queue";
     else if (statusFilter === "in_progress") matchesStatus = req.status === "in_progress";
     else if (statusFilter === "completed") matchesStatus = req.status === "completed";
-    else if (statusFilter === "Tümü") matchesStatus = true;
 
-    return matchesSearch && matchesStatus;
+    // 3. Tab Filter (Active vs History logic)
+    let matchesTab = false;
+
+    if (activeTab === 'history') {
+      // Show ONLY Completed or Cancelled
+      matchesTab = ['completed', 'cancelled'].includes(req.status);
+    } else {
+      // Active Tabs: Show ONLY Active requests
+      if (!isActiveRequest(req.status)) return false;
+
+      if (activeTab === 'all') {
+        matchesTab = true;
+      } else {
+        // Filter by type for active tabs
+        matchesTab = (req.request_type || 'other') === activeTab;
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesTab;
   });
 
   const formatDate = (dateString: string) => {
@@ -172,6 +211,19 @@ export default function ServiceRequestsPage() {
   const getDisplayStatus = (status: string) => {
     if (status === "in_queue") return "pending";
     return status;
+  };
+
+  // Calculate counts for tabs
+  const getTabCount = (tabId: string) => {
+    if (tabId === 'history') {
+      return requests.filter(r => ['completed', 'cancelled'].includes(r.status)).length;
+    }
+
+    // For all other tabs, we strictly count ACTIVE items
+    const activeRequests = requests.filter(r => isActiveRequest(r.status));
+
+    if (tabId === 'all') return activeRequests.length;
+    return activeRequests.filter(r => (r.request_type || 'other') === tabId).length;
   };
 
   return (
@@ -245,6 +297,41 @@ export default function ServiceRequestsPage() {
             </div>
           </div>
 
+          {/* Tabs */}
+          <div className="mb-6 overflow-x-auto pb-2">
+            <div className="flex space-x-2">
+              {tabs.map(tab => {
+                const isActive = activeTab === tab.id;
+                const count = getTabCount(tab.id);
+                const isHistory = tab.id === 'history';
+
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`
+                                flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap
+                                ${isActive
+                        ? (isHistory ? 'bg-gray-800 text-white shadow-md' : 'bg-purple-600 text-white shadow-md')
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}
+                            `}
+                  >
+                    {isHistory && <Archive size={14} className={isActive ? 'text-white' : 'text-gray-500'} />}
+                    <span>{tab.label}</span>
+                    <span className={`
+                                px-1.5 py-0.5 rounded-full text-xs
+                                ${isActive
+                        ? 'bg-white/20 text-white'
+                        : 'bg-gray-200 text-gray-700'}
+                            `}>
+                      {count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* Requests Table */}
           {loading ? (
             <div className="text-center py-12">
@@ -257,12 +344,13 @@ export default function ServiceRequestsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Müşteri</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ürün</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tür</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Durum</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tarih</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Müşteri</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ürün</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tür</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Durum</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tarih</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">İşlem</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -276,31 +364,38 @@ export default function ServiceRequestsPage() {
                         className="hover:bg-purple-50 cursor-pointer transition-colors"
                         onClick={() => openDetailPanel(req)}
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-6 py-4">
                           <span className="font-bold text-purple-600">SR-{req.id}</span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
                               <User size={14} className="text-purple-600" />
                             </div>
-                            <span className="font-medium">{req.customer_name}</span>
+                            <span className="font-medium text-gray-900">{req.customer_name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{req.product_name}</td>
-                        <td className="px-4 py-3">
-                          <span className="bg-gray-100 px-2 py-1 rounded text-xs font-medium">
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate" title={req.product_name}>
+                          {req.product_name}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="bg-gray-100 px-2.5 py-1 rounded text-xs font-medium text-gray-700">
                             {requestTypeLabels[req.request_type] || req.request_type}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`${status.bgColor} ${status.color} px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 w-fit`}>
+                        <td className="px-6 py-4">
+                          <span className={`${status.bgColor} ${status.color} px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 w-fit`}>
                             <StatusIcon size={12} />
                             {status.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">
+                        <td className="px-6 py-4 text-xs text-gray-500">
                           {formatDate(req.created_at)}
+                        </td>
+                        <td className="px-6 py-4 text-right text-gray-400">
+                          <div className="flex justify-end hover:text-purple-600 transition-colors">
+                            <Play size={16} />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -309,8 +404,18 @@ export default function ServiceRequestsPage() {
               </table>
 
               {filteredRequests.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  Servis talebi bulunamadı
+                <div className="text-center py-16">
+                  {activeTab === 'history' ? (
+                    <>
+                      <CheckCircle size={48} className="mx-auto text-gray-200 mb-4" />
+                      <p className="text-gray-500">Henüz tamamlanmış veya taranmış bir talep yok</p>
+                    </>
+                  ) : (
+                    <>
+                      <Wrench size={48} className="mx-auto text-gray-200 mb-4" />
+                      <p className="text-gray-500">Süper! Bu kategoride bekleyen iş yok</p>
+                    </>
+                  )}
                 </div>
               )}
             </div>

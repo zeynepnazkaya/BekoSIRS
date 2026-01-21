@@ -3,6 +3,8 @@
 export interface District {
     id: number;
     name: string;
+    center_lat?: number;
+    center_lng?: number;
 }
 
 export interface Area {
@@ -53,9 +55,19 @@ export interface CustomerFormData {
     district: number | null;
     area: number | null;
     open_address: string;
+    address_lat?: number | null;
+    address_lng?: number | null;
 }
 
 export interface CustomerFilters {
     search?: string;
     ordering?: 'first_name' | '-first_name' | 'last_name' | '-last_name';
+    page?: number;
+}
+
+export interface PaginatedResponse<T> {
+    count: number;
+    next: string | null;
+    previous: string | null;
+    results: T[];
 }

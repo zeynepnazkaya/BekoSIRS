@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { X, Save } from "lucide-react";
+import { X, Save, MapPin } from "lucide-react";
 import { customerService } from "../services/customerService";
 import { locationService } from "../services/locationService";
-import type { Customer, CustomerFormData, District, Area } from "../types/customer";
+import MapLocationPicker, { DISTRICT_CENTERS } from "./MapLocationPicker";
+import type { CustomerFormData, District, Area, CustomerDetail } from "../types/customer";
 
 interface EditCustomerModalProps {
-    customer: Customer | null;
+    customer: CustomerDetail | null;
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
@@ -25,12 +26,16 @@ export default function EditCustomerModal({
         district: null,
         area: null,
         open_address: "",
+        address_lat: null,
+        address_lng: null,
     });
 
     const [districts, setDistricts] = useState<District[]>([]);
     const [areas, setAreas] = useState<Area[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [success, setSuccess] = useState(false);
+    const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -48,6 +53,8 @@ export default function EditCustomerModal({
                 district: customer.district,
                 area: customer.area,
                 open_address: customer.open_address || "",
+                address_lat: customer.address_lat || null,
+                address_lng: customer.address_lng || null,
             });
 
             if (customer.district) {
@@ -87,6 +94,83 @@ export default function EditCustomerModal({
         } else {
             setAreas([]);
         }
+
+        // Set focus to district center
+        const selectedDistrict = districts.find(d => d.id === parseInt(districtId));
+        if (selectedDistrict) {
+            const center = DISTRICT_CENTERS[selectedDistrict.name];
+            if (center) {
+                setMapFocus({ lat: center.lat, lng: center.lng, zoom: center.zoom });
+            }
+        }
+    };
+
+    const handleAreaChange = async (areaId: string) => {
+        const id = areaId ? parseInt(areaId) : null;
+        setFormData(prev => ({
+            ...prev,
+            area: id
+        }));
+
+        if (!id) return;
+
+        // Find district and area names for geocoding
+        const selectedDistrict = districts.find(d => d.id === formData.district);
+        const selectedArea = areas.find(a => a.id === id);
+
+        if (selectedDistrict && selectedArea) {
+            try {
+                // Fetch coordinates from Nominatim (OpenStreetMap)
+                const query = `${selectedArea.name}, ${selectedDistrict.name}, Cyprus`;
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+                    headers: {
+                        'User-Agent': 'BekoSIRS-App/1.0'
+                    }
+                });
+
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lng = parseFloat(data[0].lon);
+                    setMapFocus({ lat, lng, zoom: 15 });
+                }
+            } catch (err) {
+                console.warn("Geocoding failed:", err);
+            }
+        }
+    };
+
+    // Initialize focus point from previous selection if any
+    useEffect(() => {
+        if (!isOpen) {
+            setMapFocus(null);
+        } else {
+            // If we have saved coordinates, focus there
+            if (customer && customer.address_lat && customer.address_lng) {
+                setMapFocus({ lat: Number(customer.address_lat), lng: Number(customer.address_lng), zoom: 15 });
+            } else if (districts.length > 0 && formData.district) {
+                // Or focus on district center if available
+                const selectedDistrict = districts.find(d => d.id === formData.district);
+                if (selectedDistrict) {
+                    const center = DISTRICT_CENTERS[selectedDistrict.name];
+                    if (center) {
+                        setMapFocus({ lat: center.lat, lng: center.lng, zoom: center.zoom });
+                    }
+                }
+            }
+        }
+    }, [isOpen, customer, districts, formData.district]);
+
+    const handleLocationSelect = (lat: number, lng: number) => {
+        // Limit precision to 6 decimal places to avoid backend validation errors (max_digits=10)
+        const latFixed = parseFloat(lat.toFixed(6));
+        const lngFixed = parseFloat(lng.toFixed(6));
+
+        setFormData(prev => ({
+            ...prev,
+            address_lat: latFixed,
+            address_lng: lngFixed,
+        }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -109,11 +193,64 @@ export default function EditCustomerModal({
 
         try {
             setLoading(true);
-            await customerService.updateCustomer(customer!.id, formData);
-            onSuccess();
-            onClose();
+
+            // Sanitize coordinates to ensure they don't exceed backend limits (max_digits=10)
+            const dataToSend = { ...formData };
+
+            if (dataToSend.address_lat !== null && typeof dataToSend.address_lat === 'number') {
+                dataToSend.address_lat = Number(dataToSend.address_lat.toFixed(6));
+            }
+            if (dataToSend.address_lng !== null && typeof dataToSend.address_lng === 'number') {
+                dataToSend.address_lng = Number(dataToSend.address_lng.toFixed(6));
+            }
+
+            await customerService.updateCustomer(customer!.id, dataToSend);
+            setSuccess(true);
+            setTimeout(() => {
+                setSuccess(false);
+                onSuccess();
+                onClose();
+            }, 1500);
         } catch (err: any) {
-            setError(err.response?.data?.message || "Güncelleme başarısız oldu");
+            console.error("Update error:", err);
+            let errorMessage = "Güncelleme başarısız oldu";
+
+            if (err.response?.data) {
+                const data = err.response.data;
+                if (typeof data === 'string') {
+                    errorMessage = data;
+                } else if (data.message) {
+                    errorMessage = data.message;
+                } else {
+                    // DRF returns field errors as object: { field: ["error"] }
+                    // Parse and format them for display
+                    const messages = Object.entries(data).map(([key, value]) => {
+                        // Map technical field names to Turkish labels
+                        const fieldLabels: Record<string, string> = {
+                            first_name: 'Ad',
+                            last_name: 'Soyad',
+                            email: 'E-posta',
+                            phone_number: 'Telefon',
+                            district: 'İlçe',
+                            area: 'Mahalle',
+                            open_address: 'Açık Adres',
+                            address_lat: 'Konum (Enlem)',
+                            address_lng: 'Konum (Boylam)',
+                            non_field_errors: 'Hata'
+                        };
+
+                        const label = fieldLabels[key] || key;
+                        const msg = Array.isArray(value) ? value.join(", ") : String(value);
+                        return `${label}: ${msg}`;
+                    });
+
+                    if (messages.length > 0) {
+                        errorMessage = messages.join("\n");
+                    }
+                }
+            }
+
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -137,8 +274,16 @@ export default function EditCustomerModal({
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                    {/* Success Message */}
+                    {success && (
+                        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center gap-2">
+                            <span className="text-xl">✓</span>
+                            <span>Müşteri bilgileri başarıyla kaydedildi!</span>
+                        </div>
+                    )}
+
                     {error && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg whitespace-pre-wrap">
                             {error}
                         </div>
                     )}
@@ -238,12 +383,7 @@ export default function EditCustomerModal({
                                 </label>
                                 <select
                                     value={formData.area || ""}
-                                    onChange={(e) =>
-                                        setFormData({
-                                            ...formData,
-                                            area: e.target.value ? parseInt(e.target.value) : null,
-                                        })
-                                    }
+                                    onChange={(e) => handleAreaChange(e.target.value)}
                                     disabled={!formData.district || areas.length === 0}
                                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black cursor-pointer disabled:bg-gray-100 disabled:cursor-not-allowed"
                                 >
@@ -275,6 +415,23 @@ export default function EditCustomerModal({
                                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black resize-none"
                                 rows={3}
                                 placeholder="Ev/Apartman numarası, cadde, sokak vb."
+                            />
+                        </div>
+
+                        {/* Map Location Picker */}
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                                <MapPin size={16} />
+                                Konum Seçimi
+                            </label>
+                            <p className="text-xs text-gray-500 mb-3">
+                                Harita üzerinde tıklayarak müşterinin konumunu seçin. İlçe seçtiğinizde harita otomatik olarak o bölgeye odaklanır.
+                            </p>
+                            <MapLocationPicker
+                                initialLat={formData.address_lat}
+                                initialLng={formData.address_lng}
+                                onLocationSelect={handleLocationSelect}
+                                focusPoint={mapFocus}
                             />
                         </div>
                     </div>

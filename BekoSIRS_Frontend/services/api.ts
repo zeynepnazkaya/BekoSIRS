@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 
 // 🔹 Get your computer's local IP address
 // Replace this with YOUR actual IP address from ipconfig/ifconfig
-const COMPUTER_IP = '172.20.10.3';
+const COMPUTER_IP = '192.168.1.209';
 
 // 🔹 Expo Go requires using your computer's local network IP
 const API_BASE_URL = __DEV__

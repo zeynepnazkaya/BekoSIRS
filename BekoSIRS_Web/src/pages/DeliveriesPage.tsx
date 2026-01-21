@@ -385,9 +385,13 @@ export default function DeliveriesPage() {
                                                     <div className="text-sm text-gray-900 max-w-xs truncate" title={delivery.address}>
                                                         {delivery.address || '-'}
                                                     </div>
-                                                    {delivery.address_lat && delivery.address_lng && (
-                                                        <div className="text-xs text-blue-600 flex items-center gap-1 mt-0.5">
+                                                    {delivery.address_lat && delivery.address_lng ? (
+                                                        <div className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
                                                             <Lucide.MapPin size={10} /> Konum Var
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-orange-600 flex items-center gap-1 mt-0.5 font-medium">
+                                                            <Lucide.AlertTriangle size={10} /> Konum Eksik - Rota optimize edilemez
                                                         </div>
                                                     )}
                                                 </td>
