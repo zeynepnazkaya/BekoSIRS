@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
-import { isAuthenticated } from '../storage/storage.native';
+import { isAuthenticated, getToken } from '../storage/storage.native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function RootLayout() {
   const segments = useSegments();
@@ -23,6 +24,7 @@ export default function RootLayout() {
 
     const inAuthPage = segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password';
     const inDrawer = segments[0] === '(drawer)';
+    const inDelivery = segments[0] === '(delivery)';
 
     if (!hasToken && !inAuthPage) {
       router.replace('/login');
@@ -30,7 +32,14 @@ export default function RootLayout() {
     }
 
     if (hasToken && inAuthPage) {
-      router.replace('/(drawer)');
+      // Decide where to go based on role
+      AsyncStorage.getItem('userRole').then(role => {
+        if (role === 'delivery') {
+          router.replace('/(delivery)');
+        } else {
+          router.replace('/(drawer)');
+        }
+      });
       return;
     }
   }, [hasToken, segments, isReady]);
@@ -46,6 +55,7 @@ export default function RootLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+      <Stack.Screen name="(delivery)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="register" options={{ headerShown: false }} />
       <Stack.Screen
@@ -62,3 +72,4 @@ export default function RootLayout() {
     </Stack>
   );
 }
+

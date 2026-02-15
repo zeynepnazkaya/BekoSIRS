@@ -12,6 +12,7 @@ import {
   Filter,
   CheckCircle,
   XCircle,
+  Truck,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import api from "../services/api";
@@ -89,6 +90,8 @@ export default function UsersPage() {
         return "bg-green-100 text-green-800 border-green-300";
       case "customer":
         return "bg-blue-100 text-blue-800 border-blue-300";
+      case "delivery":
+        return "bg-orange-100 text-orange-800 border-orange-300";
       default:
         return "bg-gray-100 text-gray-800 border-gray-300";
     }
@@ -99,6 +102,7 @@ export default function UsersPage() {
       case "admin": return "Admin";
       case "seller": return "Satıcı";
       case "customer": return "Müşteri";
+      case "delivery": return "Teslimatçı";
       default: return role;
     }
   };
@@ -108,6 +112,7 @@ export default function UsersPage() {
     admin: users.filter((u) => u.role === "admin").length,
     seller: users.filter((u) => u.role === "seller").length,
     customer: users.filter((u) => u.role === "customer").length,
+    delivery: users.filter((u) => u.role === "delivery").length,
     active: users.filter((u) => u.is_active).length,
   };
 
@@ -162,7 +167,7 @@ export default function UsersPage() {
 
         <main className="max-w-7xl mx-auto w-full px-6 py-8 overflow-y-auto">
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-2">
                 <Users size={24} className="text-gray-600" />
@@ -190,6 +195,13 @@ export default function UsersPage() {
                 <span className="text-2xl font-bold text-blue-600">{roleStats.customer}</span>
               </div>
               <p className="text-gray-600 text-sm font-medium">Müşteri</p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-2">
+                <Truck size={24} className="text-orange-500" />
+                <span className="text-2xl font-bold text-orange-600">{roleStats.delivery}</span>
+              </div>
+              <p className="text-gray-600 text-sm font-medium">Teslimatçı</p>
             </div>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-2">
@@ -225,6 +237,7 @@ export default function UsersPage() {
                   <option value="admin">Admin</option>
                   <option value="seller">Satıcı</option>
                   <option value="customer">Müşteri</option>
+                  <option value="delivery">Teslimatçı</option>
                 </select>
               </div>
             </div>
@@ -268,6 +281,7 @@ export default function UsersPage() {
                             <option value="admin">⚙️ Admin</option>
                             <option value="seller">🏪 Satıcı</option>
                             <option value="customer">👤 Müşteri</option>
+                            <option value="delivery">🚚 Teslimatçı</option>
                           </select>
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -337,6 +351,7 @@ export default function UsersPage() {
                     <option value="admin">Admin</option>
                     <option value="seller">Satıcı</option>
                     <option value="customer">Müşteri</option>
+                    <option value="delivery">Teslimatçı</option>
                   </select>
                 </div>
               </div>

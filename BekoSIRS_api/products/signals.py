@@ -24,26 +24,37 @@ def create_delivery_for_assignment(sender, instance, created, **kwargs):
         except DepotLocation.DoesNotExist:
             default_depot = None
         
-        # Create formatted address
-        address_parts = []
-        if customer.open_address:
-            address_parts.append(customer.open_address)
-        if customer.area:
-            address_parts.append(customer.area.name)
-        if customer.district:
-            address_parts.append(customer.district.name)
+        # Create formatted address and get coordinates
+        # Safely check for address relation using hasattr or try-except
+        address_text = "Adres Bulunamadı"
+        lat = None
+        lng = None
         
-        formatted_address = ", ".join(address_parts) if address_parts else customer.address or ""
-        
+        try:
+            if hasattr(customer, 'customer_address') and customer.customer_address:
+                addr = customer.customer_address
+                parts = []
+                if addr.open_address: parts.append(addr.open_address)
+                if addr.area: parts.append(addr.area.name)
+                if addr.district: parts.append(addr.district.name)
+                
+                if parts:
+                    address_text = ", ".join(parts)
+                
+                lat = addr.latitude
+                lng = addr.longitude
+        except Exception as e:
+            print(f"Warning: Could not fetch address for delivery: {e}")
+            
         # Create delivery
         Delivery.objects.create(
             assignment=instance,
-            address=formatted_address,
-            address_lat=customer.address_lat,
-            address_lng=customer.address_lng,
+            address=address_text,
+            address_lat=lat,
+            address_lng=lng,
             depot=default_depot,
             customer_phone_snapshot=customer.phone_number or "",
-            address_snapshot=formatted_address,
+            address_snapshot=address_text,
             status='WAITING'
         )
 @receiver(post_save, sender=Delivery)

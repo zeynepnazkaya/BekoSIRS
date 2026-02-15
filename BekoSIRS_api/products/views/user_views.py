@@ -118,11 +118,11 @@ def profile_view(request):
             "phone_number": getattr(user, 'phone_number', ''),
             "role": user.role,
             "date_joined": user.date_joined,
-            # Adres Bilgileri
-            "address": user.address,
-            "address_city": user.address_city,
-            "address_lat": user.address_lat,
-            "address_lng": user.address_lng,
+            # Adres Bilgileri - Using getattr for safety after migration
+            "address": getattr(user, 'address', ''),
+            "address_city": getattr(user, 'address_city', ''),
+            "address_lat": getattr(user, 'address_lat', None),
+            "address_lng": getattr(user, 'address_lng', None),
         })
 
     data = request.data
@@ -135,15 +135,15 @@ def profile_view(request):
     if "phone_number" in data:
         user.phone_number = data["phone_number"]
     
-    # Adres güncelleme
-    if "address" in data:
+    # Adres güncelleme - safely check if attributes exist
+    if "address" in data and hasattr(user, 'address'):
         user.address = data["address"]
-    if "address_city" in data:
+    if "address_city" in data and hasattr(user, 'address_city'):
         user.address_city = data["address_city"]
     # Koordinatlar genelde mobilden gelmez ama admin güncellerse diye açık bırakalım
-    if "address_lat" in data:
+    if "address_lat" in data and hasattr(user, 'address_lat'):
         user.address_lat = data["address_lat"]
-    if "address_lng" in data:
+    if "address_lng" in data and hasattr(user, 'address_lng'):
         user.address_lng = data["address_lng"]
 
     if "new_password" in data and data["new_password"]:
@@ -168,8 +168,8 @@ def profile_view(request):
             "last_name": user.last_name,
             "phone_number": getattr(user, 'phone_number', ''),
             "role": user.role,
-            "address": user.address,
-            "address_city": user.address_city,
+            "address": getattr(user, 'address', ''),
+            "address_city": getattr(user, 'address_city', ''),
         }
     })
 

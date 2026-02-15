@@ -58,6 +58,7 @@ class CustomUser(AbstractUser):
         ('admin', 'Admin'),
         ('seller', 'Satıcı'),
         ('customer', 'Müşteri'),
+        ('delivery', 'Teslimat Personeli'),
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='customer')
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)

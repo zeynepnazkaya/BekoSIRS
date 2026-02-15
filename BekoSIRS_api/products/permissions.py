@@ -44,3 +44,9 @@ class IsOwnerOrAdmin(BasePermission):
         # Check common owner field names
         owner = getattr(obj, 'customer', None) or getattr(obj, 'user', None)
         return owner == request.user
+
+
+class IsDeliveryPerson(BasePermission):
+    """Allow access only to delivery personnel."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'delivery'

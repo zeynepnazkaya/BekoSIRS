@@ -61,6 +61,7 @@ from .delivery_views import (
     DeliveryViewSet,
     DeliveryRouteViewSet,
     ProductAssignmentViewSet,
+    DeliveryPersonViewSet,
 )
 
 # New Analytics & Installment Views (Manually Added)
@@ -115,6 +116,7 @@ __all__ = [
     'DeliveryViewSet',
     'DeliveryRouteViewSet',
     'ProductAssignmentViewSet',
+    'DeliveryPersonViewSet',
     # Analytics & Installments
     'ChartsView', 
     'SalesForecastView',

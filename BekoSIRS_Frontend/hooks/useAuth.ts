@@ -44,24 +44,35 @@ export const useAuth = () => {
       console.log('✅ Backend yanıtı alındı:', response.data);
 
       // Yanıttan verileri parçalayarak al
-      const { access, refresh, role } = response.data;
-
-      // ❗ HATA DÜZELTME: role bilgisini response.data üzerinden kontrol ediyoruz
-      const validatedRole = role || 'customer';
+      const { access, refresh } = response.data;
 
       // 1. Token'ları güvenli depolamaya kaydet
       await saveTokens(access, refresh);
       setAuthToken(access); // State'i güncelle
 
-      // 2. Rol bilgisini AsyncStorage'a kaydet (undefined hatası önlendi)
-      await AsyncStorage.setItem('user_role', validatedRole);
+      // 2. Rol bilgisini profil endpoint'inden çek
+      let userRole = 'customer'; // Default fallback
+      try {
+        const profileResponse = await api.get('/api/v1/profile/', {
+          headers: { Authorization: `Bearer ${access}` }
+        });
+        userRole = profileResponse.data.role || 'customer';
+        console.log('👤 User role:', userRole);
+      } catch (profileError) {
+        console.error('❌ Profil alınamadı, varsayılan rol kullanılıyor:', profileError);
+      }
+
+      // 3. Rol bilgisini AsyncStorage'a kaydet
+      await AsyncStorage.setItem('userRole', userRole);
 
       console.log('💾 Veriler kaydedildi. Yönlendiriliyor...');
 
-      // 3. Başarılı girişte ana sayfaya yönlendir
-      // Expo Router klasör yapınıza göre yolu doğrulayın
-
-      router.replace('/' as any);
+      // 4. Role göre yönlendirme
+      if (userRole === 'delivery') {
+        router.replace('/(delivery)' as any);
+      } else {
+        router.replace('/(drawer)' as any);
+      }
 
     } catch (error: any) {
       console.error('❌ Login error:', error);
@@ -127,7 +138,7 @@ export const useAuth = () => {
   const logout = async () => {
     try {
       await clearAllTokens();
-      await AsyncStorage.removeItem('user_role');
+      await AsyncStorage.removeItem('userRole');
       setAuthToken(null); // State'i güncelle
       console.log('🚪 Çıkış yapıldı.');
       router.replace('/login' as any);

@@ -99,7 +99,12 @@ router.register(r'customers', CustomerManagementViewSet, basename='customer')
 # Installment & Audit
 router.register(r'installment-plans', InstallmentPlanViewSet, basename='installment-plan')
 router.register(r'installments', InstallmentViewSet, basename='installment')
+router.register(r'installments', InstallmentViewSet, basename='installment')
 router.register(r'analytics/audit-logs', AuditLogView, basename='audit-log')
+
+# Delivery Person App
+from products.views.delivery_views import DeliveryPersonViewSet
+router.register(r'delivery-person', DeliveryPersonViewSet, basename='delivery-person')
 
 urlpatterns = [
     # Router üzerinden gelen tüm endpointler
