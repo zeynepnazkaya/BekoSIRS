@@ -97,29 +97,12 @@ WSGI_APPLICATION = 'bekosirs_backend.wsgi.application'
 # ------------------------------------------------------------
 # Use SQLite for development/testing if DB environment variables not set
 # Use MSSQL for production
-if os.getenv('DB_NAME'):
-    DATABASES = {
-        'default': {
-            'ENGINE': 'mssql',
-            'NAME': os.environ['DB_NAME'],
-            'USER': os.environ['DB_USER'],
-            'PASSWORD': os.environ['DB_PASSWORD'],
-            'HOST': os.environ['DB_HOST'],
-            'PORT': os.getenv('DB_PORT', '1433'),
-            'OPTIONS': {
-                'driver': 'ODBC Driver 18 for SQL Server',
-                'extra_params': 'Encrypt=yes;TrustServerCertificate=yes',
-            },
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
-else:
-    # SQLite fallback for local development/testing
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+}
 
 # ------------------------------------------------------------
 # STATIC & MEDIA

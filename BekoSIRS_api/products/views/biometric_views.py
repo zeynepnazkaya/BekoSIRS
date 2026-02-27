@@ -22,6 +22,8 @@ def biometric_enable(request):
     """
     serializer = BiometricEnableSerializer(data=request.data)
     if not serializer.is_valid():
+        print("Biometric Enable Error - Request Data:", request.data)
+        print("Biometric Enable Error - Serializer Errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     device_id = serializer.validated_data['device_id']

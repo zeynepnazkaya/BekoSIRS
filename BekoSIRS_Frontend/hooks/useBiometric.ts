@@ -120,7 +120,7 @@ export const useBiometric = () => {
             }
 
             // Call backend to enable biometric
-            await api.post('/api/biometric/enable/', {
+            await api.post('/api/v1/biometric/enable/', {
                 device_id: deviceId,
                 refresh_token: refreshToken,
             });
@@ -155,7 +155,7 @@ export const useBiometric = () => {
         try {
             // Call backend to disable
             try {
-                await api.post('/api/biometric/disable/');
+                await api.post('/api/v1/biometric/disable/');
             } catch (e) {
                 // Continue even if backend call fails (user might be logged out)
             }
@@ -213,7 +213,7 @@ export const useBiometric = () => {
             }
 
             // Verify device with backend
-            const verifyResponse = await api.post('/api/biometric/verify-device/', {
+            const verifyResponse = await api.post('/api/v1/biometric/verify-device/', {
                 device_id: deviceId,
                 user_id: parseInt(userId),
             });
