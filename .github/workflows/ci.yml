@@ -91,3 +91,6 @@ jobs:
 
       - name: Expo Doctor (check config)
         run: npx expo-doctor || true
+
+      - name: Run tests
+        run: npm test
