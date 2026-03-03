@@ -1,5 +1,9 @@
 BekoSIRS - Proje Kodlarında Yaptığım Düzeltmeler ve Eklemeler
 
+5) Mobil Uygulamaya %100 Birim Testleri (Unit Tests) ve CI/CD Entegrasyonu Ekledim
+- Eski Durum: Mobil uygulamanın (`BekoSIRS_Frontend`) hiçbir test altyapısı yoktu, kodların çalışıp çalışmadığı sadece elle kontrol edilebiliyordu. GitHub'a kod atıldığında otomatik bir kontrol sistemi yoktu.
+- Ne Yaptım: Jest ve React Native Testing Library kurarak uygulamanın tüm kritik sayfaları (Login, Kayıt, Ayarlar, Profil, İstek Listesi, Ödemeler vb. toplam 64 test senaryosu) için birim testleri (unit tests) yazdım. Ayrıca GitHub Actions (`ci.yml`) dosyasına müdahale ederek, her PR (Pull Request) açıldığında bu mobil testlerin GitHub sunucularında otomatik çalışmasını ve hata yoksa onay vermesini sağladım.
+
 1) "Çıkış Yap" Butonu Ekledim
 - Eski Durum: Kullanıcının uygulamadan kendi isteğiyle çıkış yapabileceği hiçbir alan veya buton tasarlanmamıştı.
 - Ne Yaptım: `app/(drawer)/settings.tsx` dosyasına girdim ve "Güvenlik" sekmesinin altına belirgin, kırmızı bir "Çıkış Yap" butonu ekledim. Tıklandığında telefon hafızasındaki tüm biletleri silebilmesi için `storage.native.ts` içindeki `clearAllTokens` metodunu kullanarak kullanıcıyı güvenle Login sayfasına yönlendirdim.
