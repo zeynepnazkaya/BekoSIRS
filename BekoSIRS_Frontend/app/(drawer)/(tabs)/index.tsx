@@ -14,9 +14,11 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { FontAwesome } from '@expo/vector-icons';
-import api, { wishlistAPI, productAPI } from '../../../services/api';
+import api from '../../../services/api';
+const { wishlistAPI, productAPI } = api as any;
 import { ProductCard } from '../../../components/ProductCard';
 import { useRouter, Router } from 'expo-router';
+import { getToken } from '../../../storage/storage.native';
 
 const { width } = Dimensions.get('window');
 const GAP = 12;
@@ -275,7 +277,6 @@ const HomeScreen = () => {
   // Initial data fetch (categories, popular, wishlist, initial products)
   const fetchInitialData = useCallback(async () => {
     try {
-      const { getToken } = await import('../../../storage/storage.native');
       const token = await getToken();
 
       const requests: Promise<any>[] = [

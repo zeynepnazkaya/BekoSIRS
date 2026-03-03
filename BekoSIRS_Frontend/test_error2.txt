@@ -1,0 +1,113 @@
+﻿
+> bekosirs_frontend@1.0.0 test
+> jest __tests__/dashboard.test.tsx
+
+  console.log
+    Ô£à Initial data loaded: 2 products
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:309:15)
+
+  console.warn
+    SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/th3rdwave/react-native-safe-area-context
+
+    [0m [90m 411 |[39m
+     [90m 412 |[39m   [36mreturn[39m (
+    [31m[1m>[22m[39m[90m 413 |[39m     [33m<[39m[33mSafeAreaView[39m style[33m=[39m{styles[33m.[39mcontainer}[33m>[39m
+     [90m     |[39m      [31m[1m^[22m[39m
+     [90m 414 |[39m       [33m<[39m[33mFlatList[39m
+     [90m 415 |[39m         data[33m=[39m{filteredProducts}
+     [90m 416 |[39m         renderItem[33m=[39m{({ item }) [33m=>[39m ([0m
+
+      at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+      at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:92:5)
+      at SafeAreaView (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:413:6)
+      at Object.react-stack-bottom-frame (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:13976:20)
+      at renderWithHooks (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:2866:22)
+      at updateFunctionComponent (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:6006:19)
+      at beginWork (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:7474:18)
+      at runWithFiberInDEV (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:1574:13)
+      at performUnitOfWork (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10972:22)
+      at workLoopSync (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10816:41)
+      at renderRootSync (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10797:11)
+      at performWorkOnRoot (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10349:13)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:2094:7)
+      at Immediate.performWorkUntilDeadline [as _onImmediate] (node_modules/scheduler/cjs/scheduler.native.development.js:45:48)
+
+  console.log
+    Ô£à Initial data loaded: 2 products
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:309:15)
+
+  console.log
+    ­şöı Searching: /api/v1/products/?page_size=50&category=1
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:334:15)
+
+  console.log
+    Ô£à Search results: 2 products found
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:338:15)
+
+  console.log
+    Ô£à Initial data loaded: 2 products
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:309:15)
+
+  console.log
+    Ô£à Initial data loaded: 2 products
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:309:15)
+
+  console.log
+    ­şöı Searching: /api/v1/products/?page_size=50&search=F%C4%B1r%C4%B1n
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:334:15)
+
+  console.log
+    Ô£à Search results: 2 products found
+
+      at log (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)\(tabs)../../index.tsx:338:15)
+
+node.exe : FAIL __tests__/dashboard.test.tsx
+At C:\Program Files\nodejs\npm.ps1:29 char:3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL __tests__/dashboard.test.tsx:String 
+   ) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  HomeScreen (Dashboard) Tests
+    ÔêÜ renders loading state initially (33 ms)
+    ├ù renders dashboard with products, categories, and popular products (1033 ms)
+    ÔêÜ filters by category chip press (462 ms)
+    ÔêÜ sorts the product list based on sort chips (86 ms)
+    ÔêÜ searches for a product via TextInput (420 ms)
+
+  ÔùÅ HomeScreen (Dashboard) Tests ÔÇ║ renders dashboard with products, categories, an
+d popular products
+
+    Found multiple elements with text: T├╝m├╝
+
+    [0m [90m  96 |[39m
+     [90m  97 |[39m         [90m// Wait for data load[39m
+    [31m[1m>[22m[39m[90m  98 |[39m         [36mawait[39m waitFor([36masync[3
+9m () [33m=>[39m {
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m  99 |[39m             expect(getByPlaceholderText([32m'├£r├╝n veya marka 
+ara...'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+     [90m 100 |[39m
+     [90m 101 |[39m             [90m// Categories[39m[0m
+
+      at Object.<anonymous> (__tests__/dashboard.test.tsx:98:22)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3
+:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (node_modules/@babel/runtime/helpers/asyncToGenerator.js:1
+4:12)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 4 passed, 5 total
+Snapshots:   0 total
+Time:        3.196 s, estimated 4 s
+Ran all test suites matching /__tests__\\dashboard.test.tsx/i.

@@ -294,7 +294,7 @@ const ProfileScreen = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#000000" />
+        <ActivityIndicator size="large" color="#000000" testID="loading-profile" />
       </View>
     );
   }

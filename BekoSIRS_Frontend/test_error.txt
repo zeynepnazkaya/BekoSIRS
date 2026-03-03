@@ -1,0 +1,105 @@
+﻿
+> bekosirs_frontend@1.0.0 test
+> jest __tests__/dashboard.test.tsx
+
+node.exe : FAIL __tests__/dashboard.test.tsx
+At C:\Program Files\nodejs\npm.ps1:29 char:3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL __tests__/dashboard.test.tsx:String 
+   ) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  HomeScreen (Dashboard) Tests
+    ├ù renders loading state initially (2 ms)
+    ├ù renders dashboard with products, categories, and popular products (5 ms)
+    ├ù filters by category chip press (1 ms)
+    ├ù sorts the product list based on sort chips
+    ├ù searches for a product via TextInput
+
+  ÔùÅ HomeScreen (Dashboard) Tests ÔÇ║ renders loading state initially
+
+    TypeError: Cannot read properties of undefined (reading 'getPopularProducts')
+
+    [0m [90m 75 |[39m         })[33m;[39m
+     [90m 76 |[39m
+    [31m[1m>[22m[39m[90m 77 |[39m         (productAPI[33m.[39mgetPopularProduc
+ts [36mas[39m jest[33m.[39m[33mMock[39m)[33m.[39mmockResolvedValue({
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 78 |[39m             data[33m:[39m { results[33m:[39m mockPopularProdu
+cts }
+     [90m 79 |[39m         })[33m;[39m
+     [90m 80 |[39m[0m
+
+      at Object.getPopularProducts (__tests__/dashboard.test.tsx:77:21)
+
+  ÔùÅ HomeScreen (Dashboard) Tests ÔÇ║ renders dashboard with products, categories, an
+d popular products
+
+    TypeError: Cannot read properties of undefined (reading 'getPopularProducts')
+
+    [0m [90m 75 |[39m         })[33m;[39m
+     [90m 76 |[39m
+    [31m[1m>[22m[39m[90m 77 |[39m         (productAPI[33m.[39mgetPopularProduc
+ts [36mas[39m jest[33m.[39m[33mMock[39m)[33m.[39mmockResolvedValue({
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 78 |[39m             data[33m:[39m { results[33m:[39m mockPopularProdu
+cts }
+     [90m 79 |[39m         })[33m;[39m
+     [90m 80 |[39m[0m
+
+      at Object.getPopularProducts (__tests__/dashboard.test.tsx:77:21)
+
+  ÔùÅ HomeScreen (Dashboard) Tests ÔÇ║ filters by category chip press
+
+    TypeError: Cannot read properties of undefined (reading 'getPopularProducts')
+
+    [0m [90m 75 |[39m         })[33m;[39m
+     [90m 76 |[39m
+    [31m[1m>[22m[39m[90m 77 |[39m         (productAPI[33m.[39mgetPopularProduc
+ts [36mas[39m jest[33m.[39m[33mMock[39m)[33m.[39mmockResolvedValue({
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 78 |[39m             data[33m:[39m { results[33m:[39m mockPopularProdu
+cts }
+     [90m 79 |[39m         })[33m;[39m
+     [90m 80 |[39m[0m
+
+      at Object.getPopularProducts (__tests__/dashboard.test.tsx:77:21)
+
+  ÔùÅ HomeScreen (Dashboard) Tests ÔÇ║ sorts the product list based on sort chips
+
+    TypeError: Cannot read properties of undefined (reading 'getPopularProducts')
+
+    [0m [90m 75 |[39m         })[33m;[39m
+     [90m 76 |[39m
+    [31m[1m>[22m[39m[90m 77 |[39m         (productAPI[33m.[39mgetPopularProduc
+ts [36mas[39m jest[33m.[39m[33mMock[39m)[33m.[39mmockResolvedValue({
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 78 |[39m             data[33m:[39m { results[33m:[39m mockPopularProdu
+cts }
+     [90m 79 |[39m         })[33m;[39m
+     [90m 80 |[39m[0m
+
+      at Object.getPopularProducts (__tests__/dashboard.test.tsx:77:21)
+
+  ÔùÅ HomeScreen (Dashboard) Tests ÔÇ║ searches for a product via TextInput
+
+    TypeError: Cannot read properties of undefined (reading 'getPopularProducts')
+
+    [0m [90m 75 |[39m         })[33m;[39m
+     [90m 76 |[39m
+    [31m[1m>[22m[39m[90m 77 |[39m         (productAPI[33m.[39mgetPopularProduc
+ts [36mas[39m jest[33m.[39m[33mMock[39m)[33m.[39mmockResolvedValue({
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 78 |[39m             data[33m:[39m { results[33m:[39m mockPopularProdu
+cts }
+     [90m 79 |[39m         })[33m;[39m
+     [90m 80 |[39m[0m
+
+      at Object.getPopularProducts (__tests__/dashboard.test.tsx:77:21)
+
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 5 total
+Snapshots:   0 total
+Time:        1.695 s, estimated 2 s
+Ran all test suites matching /__tests__\\dashboard.test.tsx/i.

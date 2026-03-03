@@ -1,0 +1,290 @@
+﻿
+> bekosirs_frontend@1.0.0 test
+> jest __tests__/service-requests.test.tsx
+
+  console.warn
+    SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/th3rdwave/react-native-safe-area-context
+
+    [0m [90m 200 |[39m
+     [90m 201 |[39m   [36mreturn[39m (
+    [31m[1m>[22m[39m[90m 202 |[39m     [33m<[39m[33mSafeAreaView[39m style[33m=[39m{styles[33m.[39mcontainer}[33m>[39m
+     [90m     |[39m      [31m[1m^[22m[39m
+     [90m 203 |[39m       [33m<[39m[33mFlatList[39m
+     [90m 204 |[39m         data[33m=[39m{requests}
+     [90m 205 |[39m         renderItem[33m=[39m{renderItem}[0m
+
+      at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+      at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:92:5)
+      at SafeAreaView (D:\BekoSIRS\BekoSIRS_Frontend\app\(drawer)../../service-requests.tsx:202:6)
+      at Object.react-stack-bottom-frame (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:13976:20)
+      at renderWithHooks (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:2866:22)
+      at updateFunctionComponent (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:6006:19)
+      at beginWork (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:7474:18)
+      at runWithFiberInDEV (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:1574:13)
+      at performUnitOfWork (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10972:22)
+      at workLoopSync (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10816:41)
+      at renderRootSync (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10797:11)
+      at performWorkOnRoot (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:10349:13)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-test-renderer/cjs/react-test-renderer.development.js:2094:7)
+      at Immediate.performWorkUntilDeadline [as _onImmediate] (node_modules/scheduler/cjs/scheduler.native.development.js:45:48)
+
+node.exe : FAIL __tests__/service-requests.test.tsx
+At C:\Program Files\nodejs\npm.ps1:29 char:3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL __tests__/service-requests.test.tsx 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ServiceRequestsScreen Tests
+    ÔêÜ renders loading indicator initially (60 ms)
+    ├ù renders service requests list correctly (1017 ms)
+    ├ù opens new request modal when "Yeni Talep" is clicked (1087 ms)
+    ÔêÜ handles empty states correctly (61 ms)
+
+  ÔùÅ ServiceRequestsScreen Tests ÔÇ║ renders service requests list correctly
+
+    Found multiple elements with text: Tamir
+
+    [0m [90m 106 |[39m         [36mconst[39m { getByText } [33m=[39m render([3
+3m<[39m[33mServiceRequestsScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+     [90m 107 |[39m
+    [31m[1m>[22m[39m[90m 108 |[39m         [36mawait[39m waitFor(() [33m=>[3
+9m {
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 109 |[39m             expect(getByText([32m'Servis Taleplerim'[39m))[33
+m.[39mtoBeTruthy()[33m;[39m
+     [90m 110 |[39m
+     [90m 111 |[39m             [90m// Request 1[39m[0m
+
+      at Object.<anonymous> (__tests__/service-requests.test.tsx:108:22)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3
+:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (node_modules/@babel/runtime/helpers/asyncToGenerator.js:1
+4:12)
+
+  ÔùÅ ServiceRequestsScreen Tests ÔÇ║ opens new request modal when "Yeni Talep" is cli
+cked
+
+    Unable to find an element with text: Buzdolab─▒ - Beko
+
+    [36m<RCTSafeAreaView>[39m
+      [36m<RCTScrollView>[39m
+        [36m<RCTRefreshControl />[39m
+        [36m<View>[39m
+          [36m<View>[39m
+            [36m<View>[39m
+              [36m<Text>[39m
+                [0mServis Taleplerim[0m
+              [36m</Text>[39m
+              [36m<View[39m
+                [33maccessible[39m=[32m{true}[39m
+              [36m>[39m
+                [36m<FontAwesome />[39m
+                [36m<Text>[39m
+                  [0mYeni Talep[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<View>[39m
+            [36m<View>[39m
+              [36m<View>[39m
+                [36m<View>[39m
+                  [36m<Text>[39m
+                    [0mSR-[0m
+                    [0m1[0m
+                  [36m</Text>[39m
+                  [36m<Text>[39m
+                    [0mTamir[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+                [36m<View>[39m
+                  [36m<FontAwesome />[39m
+                  [36m<Text>[39m
+                    [0mBeklemede[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+              [36m</View>[39m
+              [36m<Text>[39m
+                [0mBuzdolab─▒[0m
+              [36m</Text>[39m
+              [36m<Text>[39m
+                [0mBuzdolab─▒ so─şutmuyor[0m
+              [36m</Text>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0m20 Kas─▒m 2023[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<View>[39m
+            [36m<View>[39m
+              [36m<View>[39m
+                [36m<View>[39m
+                  [36m<Text>[39m
+                    [0mSR-[0m
+                    [0m2[0m
+                  [36m</Text>[39m
+                  [36m<Text>[39m
+                    [0mBak─▒m[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+                [36m<View>[39m
+                  [36m<FontAwesome />[39m
+                  [36m<Text>[39m
+                    [0mTamamland─▒[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+              [36m</View>[39m
+              [36m<Text>[39m
+                [0m├çama┼ş─▒r Makinesi[0m
+              [36m</Text>[39m
+              [36m<Text>[39m
+                [0mY─▒ll─▒k bak─▒m[0m
+              [36m</Text>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0m15 Ekim 2023[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<View>[39m
+            [36m<View>[39m
+              [36m<View>[39m
+                [36m<View>[39m
+                  [36m<Text>[39m
+                    [0mSR-[0m
+                    [0m3[0m
+                  [36m</Text>[39m
+                  [36m<Text>[39m
+                    [0mTamir[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+                [36m<View>[39m
+                  [36m<FontAwesome />[39m
+                  [36m<Text>[39m
+                    [0mS─▒rada[0m
+                  [36m</Text>[39m
+                [36m</View>[39m
+              [36m</View>[39m
+              [36m<Text>[39m
+                [0mKombi[0m
+              [36m</Text>[39m
+              [36m<Text>[39m
+                [0mS─▒cak su vermiyor[0m
+              [36m</Text>[39m
+              [36m<View>[39m
+                [36m<FontAwesome />[39m
+                [36m<Text>[39m
+                  [0mS─▒ra No: [0m
+                  [0m42[0m
+                  [0m | Tahmini Bekleme: [0m
+                  [0m15[0m
+                  [0m dk[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0m22 Kas─▒m 2023[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</RCTScrollView>[39m
+      [36m<Modal>[39m
+        [36m<View>[39m
+          [36m<View>[39m
+            [36m<View>[39m
+              [36m<Text>[39m
+                [0mYeni Servis Talebi[0m
+              [36m</Text>[39m
+              [36m<View[39m
+                [33maccessible[39m=[32m{true}[39m
+              [36m>[39m
+                [36m<FontAwesome />[39m
+              [36m</View>[39m
+            [36m</View>[39m
+            [36m<RCTScrollView>[39m
+              [36m<View>[39m
+                [36m<Text>[39m
+                  [0m├£r├╝n Se├ğin[0m
+                [36m</Text>[39m
+                [36m<View>[39m
+                  [0m├£r├╝n se├ğin...[0m
+                  [0mBuzdolab─▒ - Beko[0m
+                [36m</View>[39m
+                [36m<Text>[39m
+                  [0mTalep T├╝r├╝[0m
+                [36m</Text>[39m
+                [36m<View>[39m
+                  [0mTamir[0m
+                  [0mBak─▒m[0m
+                  [0mGaranti[0m
+                  [0m┼Şikayet[0m
+                  [0mDi─şer[0m
+                [36m</View>[39m
+                [36m<Text>[39m
+                  [0mSorun A├ğ─▒klamas─▒[0m
+                [36m</Text>[39m
+                [36m<TextInput[39m
+                  [33mplaceholder[39m=[32m"Sorununuzu detayl─▒ olarak a├ğ─▒klay─▒n.
+.."[39m
+                  [33mvalue[39m=[32m""[39m
+                [36m/>[39m
+              [36m</View>[39m
+            [36m</RCTScrollView>[39m
+            [36m<View>[39m
+              [36m<View[39m
+                [33maccessible[39m=[32m{true}[39m
+              [36m>[39m
+                [36m<Text>[39m
+                  [0m─░ptal[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+              [36m<View[39m
+                [33maccessibilityState[39m=[32m{
+                  {
+                    "disabled": false,
+                  }
+                }[39m
+                [33maccessible[39m=[32m{true}[39m
+              [36m>[39m
+                [36m<Text>[39m
+                  [0mG├Ânder[0m
+                [36m</Text>[39m
+              [36m</View>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</Modal>[39m
+    [36m</RCTSafeAreaView>[39m
+
+    [0m [90m 139 |[39m         fireEvent[33m.[39mpress(getByText([32m'Yeni Talep
+'[39m))[33m;[39m
+     [90m 140 |[39m
+    [31m[1m>[22m[39m[90m 141 |[39m         [36mawait[39m waitFor(() [33m=>[3
+9m {
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 142 |[39m             expect(getByText([32m'Yeni Servis Talebi'[39m))[3
+3m.[39mtoBeTruthy()[33m;[39m
+     [90m 143 |[39m             expect(getByText([32m'Sorun A├ğ─▒klamas─▒'[39m))[
+33m.[39mtoBeTruthy()[33m;[39m
+     [90m 144 |[39m             expect(getByText([32m'Buzdolab─▒ - Beko'[39m))[33
+m.[39mtoBeTruthy()[33m;[39m [90m// Checks if picker items loaded[39m[0m
+
+      at Object.<anonymous> (__tests__/service-requests.test.tsx:141:22)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3
+:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 passed, 4 total
+Snapshots:   0 total
+Time:        3.417 s, estimated 4 s
+Ran all test suites matching /__tests__\\service-requests.test.tsx/i.
