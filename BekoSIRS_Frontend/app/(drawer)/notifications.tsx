@@ -12,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { notificationAPI } from '../../services/api';
+import { notificationAPI } from '../../services';
 
 interface Notification {
   id: number;

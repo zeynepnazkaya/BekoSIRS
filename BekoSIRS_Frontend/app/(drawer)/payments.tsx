@@ -11,7 +11,7 @@ import {
     Alert,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { installmentAPI } from '../../services/api';
+import { installmentAPI } from '../../services';
 
 interface Installment {
     id: number;

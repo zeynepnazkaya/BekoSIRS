@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import api, { wishlistAPI, viewHistoryAPI, reviewAPI, productOwnershipAPI } from '../../services/api';
+import api, { wishlistAPI, viewHistoryAPI, reviewAPI, productOwnershipAPI } from '../../services';
 
 interface Product {
   id: number;

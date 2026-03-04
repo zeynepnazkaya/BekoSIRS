@@ -21,8 +21,8 @@ DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # ALLOWED_HOSTS: Parse from environment variable (comma-separated list)
 # Default to localhost only for security
-_allowed_hosts = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1')
-ALLOWED_HOSTS = [host.strip() for host in _allowed_hosts.split(',') if host.strip()]
+_allowed_hosts = os.getenv('ALLOWED_HOSTS', '*')
+ALLOWED_HOSTS = ['*']
 # Add local network IPs for mobile development access via .env
 # Example: ALLOWED_HOSTS=localhost,127.0.0.1,192.168.0.107
 

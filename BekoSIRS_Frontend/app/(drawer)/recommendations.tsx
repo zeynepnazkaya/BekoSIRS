@@ -12,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { recommendationAPI, wishlistAPI, viewHistoryAPI, getImageUrl } from '../../services/api';
+import { recommendationAPI, wishlistAPI, viewHistoryAPI, getImageUrl } from '../../services';
 import { useRouter } from 'expo-router';
 
 interface Recommendation {

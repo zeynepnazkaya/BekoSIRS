@@ -15,7 +15,8 @@ import {
 import { Image } from 'expo-image';
 import { FontAwesome } from '@expo/vector-icons';
 import api from '../../../services/api';
-const { wishlistAPI, productAPI } = api as any;
+import { wishlistAPI } from '../../../services/customerService';
+import { productAPI } from '../../../services/productService';
 import { ProductCard } from '../../../components/ProductCard';
 import { useRouter, Router } from 'expo-router';
 import { getToken } from '../../../storage/storage.native';
