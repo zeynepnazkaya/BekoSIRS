@@ -35,6 +35,10 @@ class TestDeliverySystem(APITestCase):
             status='PLANNED'
         )
         
+        # Django signals create a delivery automatically when assignment is created
+        # We need to delete it first to test manual creation
+        Delivery.objects.filter(assignment=assignment).delete()
+        
         data = {
             'assignment': assignment.id,
             'address': 'Test Adresi',
@@ -91,6 +95,9 @@ class TestDeliverySystem(APITestCase):
             assigned_by=self.admin_user,
             status='PLANNED'
         )
+        # Delete the auto-created delivery from the signal
+        Delivery.objects.filter(assignment=assignment).delete()
+        
         Delivery.objects.create(
             assignment=assignment,
             address='Koordinatsız',

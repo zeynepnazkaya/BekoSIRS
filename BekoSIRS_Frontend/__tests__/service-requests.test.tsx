@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import ServiceRequestsScreen from '../app/(drawer)/service-requests';
-import { serviceRequestAPI, productOwnershipAPI } from '../services/api';
+import { serviceRequestAPI, productOwnershipAPI } from '../services';
 import { Alert } from 'react-native';
 
 // Mock expo-router
@@ -23,7 +23,7 @@ jest.mock('@react-native-picker/picker', () => {
 });
 
 // Mock the API
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     serviceRequestAPI: {
         getMyRequests: jest.fn(),
         createRequest: jest.fn(),

@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import PaymentsScreen from '../app/(drawer)/payments';
-import { installmentAPI } from '../services/api';
+import { installmentAPI } from '../services';
 import { Alert } from 'react-native';
 
 const mockPush = jest.fn();
@@ -13,7 +13,7 @@ jest.mock('expo-router', () => ({
 }));
 
 // Mock the API
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     installmentAPI: {
         getMyPlans: jest.fn(),
         getPlanInstallments: jest.fn(),

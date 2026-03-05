@@ -2,10 +2,10 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import ProductsScreen from '../app/products';
-import api from '../services/api';
+import api from '../services';
 
 // Mock API
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     get: jest.fn(),
 }));
 

@@ -26,7 +26,8 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [AllowAny()]
-        return [IsAdminUser()]
+        from products.permissions import IsAdmin
+        return [IsAdmin()]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

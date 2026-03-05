@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import SettingsScreen from '../app/(drawer)/settings';
-import api from '../services/api';
+import api from '../services';
 import { Alert } from 'react-native';
 import { useBiometric } from '../hooks/useBiometric';
 
@@ -13,7 +13,7 @@ jest.mock('expo-router', () => ({
 }));
 
 // Mock API
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     get: jest.fn(),
     post: jest.fn(),
 }));

@@ -14,9 +14,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { FontAwesome } from '@expo/vector-icons';
-import api from '../../../services/api';
-import { wishlistAPI } from '../../../services/customerService';
-import { productAPI } from '../../../services/productService';
+import api, { wishlistAPI, productAPI } from '../../../services';
 import { ProductCard } from '../../../components/ProductCard';
 import { useRouter, Router } from 'expo-router';
 import { getToken } from '../../../storage/storage.native';

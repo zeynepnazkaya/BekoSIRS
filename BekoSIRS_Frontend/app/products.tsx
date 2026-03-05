@@ -10,7 +10,7 @@ import {
   Alert,
   StatusBar,
 } from 'react-native';
-import api from '../services/api';
+import api from '../services';
 import MyProductCard from '../components/MyProductCard';
 
 interface Product {

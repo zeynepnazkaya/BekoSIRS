@@ -2,7 +2,7 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import WishlistScreen from '../app/(drawer)/(tabs)/wishlist';
 // @ts-ignore
-import { wishlistAPI, viewHistoryAPI } from '../services/api';
+import { wishlistAPI, viewHistoryAPI } from '../services';
 import { Alert } from 'react-native';
 
 const mockPush = jest.fn();
@@ -14,7 +14,7 @@ jest.mock('expo-router', () => ({
 }));
 
 // Mock the APIs
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     wishlistAPI: {
         getWishlist: jest.fn(),
         removeItem: jest.fn(),

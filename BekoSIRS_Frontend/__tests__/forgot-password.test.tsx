@@ -2,7 +2,7 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import ForgotPasswordScreen from '../app/forgot-password';
-import api from '../services/api';
+import api from '../services';
 
 // Mock Router
 jest.mock('expo-router', () => ({
@@ -12,7 +12,7 @@ jest.mock('expo-router', () => ({
 }));
 
 // Mock API
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     post: jest.fn(),
 }));
 

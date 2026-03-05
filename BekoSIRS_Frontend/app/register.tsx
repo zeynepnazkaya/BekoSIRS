@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TextInput, Button, StyleSheet, Text, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
-import api from '../services/api';
+import api from '../services';
 import { router } from 'expo-router';
 
 const RegisterScreen = () => {
