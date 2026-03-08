@@ -18,6 +18,13 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     """User CRUD with role management."""
     queryset = CustomUser.objects.all()
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        role = self.request.query_params.get('role')
+        if role:
+            qs = qs.filter(role=role)
+        return qs
+
     def get_serializer_class(self):
         if self.action == "create":
             return RegisterSerializer
@@ -26,7 +33,8 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [AllowAny()]
-        return [IsAdminUser()]
+        from products.permissions import IsAdmin
+        return [IsAdmin()]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -52,7 +60,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     def set_role(self, request, pk=None):
         user = self.get_object()
         role = request.data.get("role")
-        if role not in ["admin", "seller", "customer"]:
+        if role not in ["admin", "seller", "customer", "delivery"]:
             return Response({"error": "Geçersiz rol"}, status=status.HTTP_400_BAD_REQUEST)
         user.role = role
         user.save()

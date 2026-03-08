@@ -7,8 +7,7 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import HomeScreen from '../app/(drawer)/(tabs)/index';
-import api from '../services/api';
-const { wishlistAPI, productAPI } = api as any;
+import api, { wishlistAPI, productAPI } from '../services';
 
 jest.mock('expo-router', () => ({
     useRouter: () => ({
@@ -17,17 +16,17 @@ jest.mock('expo-router', () => ({
 }));
 
 // Mock the APIs
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     __esModule: true,
     default: {
         get: jest.fn(),
         defaults: { baseURL: 'http://test.com' },
-        wishlistAPI: {
-            getWishlist: jest.fn(),
-        },
-        productAPI: {
-            getPopularProducts: jest.fn(),
-        },
+    },
+    wishlistAPI: {
+        getWishlist: jest.fn(),
+    },
+    productAPI: {
+        getPopularProducts: jest.fn(),
     },
 }));
 

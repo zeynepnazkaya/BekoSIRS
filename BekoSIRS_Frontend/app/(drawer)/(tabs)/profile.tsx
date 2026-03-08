@@ -16,7 +16,7 @@ import {
 import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../../../hooks/useAuth';
 import { useRouter } from 'expo-router';
-import api, { locationAPI } from '../../../services/api';
+import api, { locationAPI } from '../../../services';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 interface UserProfile {

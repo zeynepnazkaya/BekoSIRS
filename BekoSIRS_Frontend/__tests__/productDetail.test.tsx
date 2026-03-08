@@ -9,8 +9,8 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { Alert, ActivityIndicator } from 'react-native';
 import ProductDetailScreen from '../app/product/[id]';
-import api from '../services/api';
-import { wishlistAPI, reviewAPI, productOwnershipAPI, viewHistoryAPI } from '../services/api';
+import api from '../services';
+import { wishlistAPI, reviewAPI, productOwnershipAPI, viewHistoryAPI } from '../services';
 
 jest.mock('expo-router', () => ({
     useLocalSearchParams: () => ({ id: '1' }),
@@ -21,7 +21,7 @@ jest.mock('expo-router', () => ({
 }));
 
 // Mock the APIs
-jest.mock('../services/api', () => {
+jest.mock('../services', () => {
     return {
         __esModule: true,
         default: {

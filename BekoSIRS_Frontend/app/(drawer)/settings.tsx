@@ -12,7 +12,7 @@ import {
   Platform,
   Switch,
 } from 'react-native';
-import api from '../../services/api';
+import api from '../../services';
 import { useBiometric } from '../../hooks/useBiometric';
 import { getToken, getRefreshToken } from '../../storage/storage.native';
 import AsyncStorage from '@react-native-async-storage/async-storage';

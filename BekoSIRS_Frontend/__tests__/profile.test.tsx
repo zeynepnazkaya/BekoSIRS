@@ -9,7 +9,7 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import ProfileScreen from '../app/(drawer)/(tabs)/profile';
 // @ts-ignore
-import api, { locationAPI } from '../services/api';
+import api, { locationAPI } from '../services';
 import { useAuth } from '../hooks/useAuth';
 import { Alert } from 'react-native';
 
@@ -28,7 +28,7 @@ jest.mock('../hooks/useAuth', () => ({
     useAuth: jest.fn(),
 }));
 
-jest.mock('../services/api', () => ({
+jest.mock('../services', () => ({
     __esModule: true,
     default: {
         get: jest.fn(),

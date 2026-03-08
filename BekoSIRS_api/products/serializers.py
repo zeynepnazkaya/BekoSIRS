@@ -6,7 +6,8 @@ from .models import (
     ServiceRequest, ServiceQueue, Notification, Recommendation,
     District, Area, DepotLocation,
     ProductAssignment, Delivery, DeliveryRoute, DeliveryRouteStop,
-    InstallmentPlan, Installment, AuditLog
+    InstallmentPlan, Installment, AuditLog,
+    CustomerAddress, UserNotificationPreference
 )
 
 # ---------------------------
@@ -540,6 +541,10 @@ class CustomerUpdateSerializer(serializers.ModelSerializer):
         address_data = validated_data.pop('customer_address', {})
         prefs_data = validated_data.pop('notification_preferences', {})
         
+        # Sanitize phone_number: empty string → None to avoid unique constraint violation
+        if 'phone_number' in validated_data and not validated_data['phone_number']:
+            validated_data['phone_number'] = None
+        
         # Update User fields
         instance = super().update(instance, validated_data)
         
@@ -634,21 +639,58 @@ class ProductAssignmentSerializer(serializers.ModelSerializer):
 
 
 class DeliverySerializer(serializers.ModelSerializer):
-    customer_name = serializers.CharField(source='assignment.customer.username', read_only=True)
+    customer_name = serializers.SerializerMethodField()
+    customer_phone = serializers.CharField(source='assignment.customer.phone_number', read_only=True)
+    customer_address = serializers.SerializerMethodField()
     product_name = serializers.CharField(source='assignment.product.name', read_only=True)
+    product_model_code = serializers.CharField(source='assignment.product.model_code', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    quantity = serializers.IntegerField(source='assignment.quantity', read_only=True)
+    driver_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Delivery
         fields = [
-            'id', 'assignment', 'customer_name', 'product_name',
+            'id', 'assignment', 'customer_name', 'customer_phone', 'customer_address',
+            'product_name', 'product_model_code', 'quantity',
             'scheduled_date', 'time_window_start', 'time_window_end',
-            'status', 'status_display', 'delivered_at', 'delivered_by',
+            'status', 'status_display', 'delivered_at', 'delivered_by', 'driver_name',
             'delivery_order', 'route_batch_id', 'distance_km', 'eta_minutes',
-            'address', 'address_lat', 'address_lng',  # Location fields for frontend
+            'address', 'address_lat', 'address_lng',
             'customer_phone_snapshot', 'address_snapshot'
         ]
         read_only_fields = ['id', 'created_at']
+
+    def get_customer_name(self, obj):
+        if obj.assignment and obj.assignment.customer:
+            c = obj.assignment.customer
+            name = f"{c.first_name} {c.last_name}".strip()
+            return name or c.username
+        return ''
+
+    def get_customer_address(self, obj):
+        if obj.address:
+            return obj.address
+        if obj.assignment and obj.assignment.customer:
+            try:
+                addr = obj.assignment.customer.customer_address
+                parts = []
+                if addr.open_address:
+                    parts.append(addr.open_address)
+                if addr.area:
+                    parts.append(addr.area.name)
+                if addr.district:
+                    parts.append(addr.district.name)
+                return ", ".join(parts) if parts else ''
+            except Exception:
+                return ''
+        return ''
+
+    def get_driver_name(self, obj):
+        if obj.delivered_by:
+            name = f"{obj.delivered_by.first_name} {obj.delivered_by.last_name}".strip()
+            return name or obj.delivered_by.username
+        return None
 
 class DeliveryRouteStopSerializer(serializers.ModelSerializer):
     delivery = DeliverySerializer(read_only=True)
@@ -662,13 +704,25 @@ class DeliveryRouteStopSerializer(serializers.ModelSerializer):
 
 class DeliveryRouteSerializer(serializers.ModelSerializer):
     stops = DeliveryRouteStopSerializer(many=True, read_only=True)
+    driver_name = serializers.SerializerMethodField()
+    stop_count = serializers.SerializerMethodField()
     
     class Meta:
         model = DeliveryRoute
         fields = [
             'id', 'date', 'store_address', 'total_distance_km', 
-            'total_duration_min', 'is_optimized', 'optimized_at', 'stops'
+            'total_duration_min', 'is_optimized', 'optimized_at',
+            'assigned_driver', 'driver_name', 'status', 'stop_count', 'stops'
         ]
+
+    def get_driver_name(self, obj):
+        if obj.assigned_driver:
+            name = f"{obj.assigned_driver.first_name} {obj.assigned_driver.last_name}".strip()
+            return name or obj.assigned_driver.username
+        return None
+
+    def get_stop_count(self, obj):
+        return obj.stops.count()
 
 
 # ---------------------------

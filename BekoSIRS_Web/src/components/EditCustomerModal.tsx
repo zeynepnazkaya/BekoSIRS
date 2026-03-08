@@ -161,7 +161,7 @@ export default function EditCustomerModal({
         }
     }, [isOpen, customer, districts, formData.district]);
 
-    const handleLocationSelect = (lat: number, lng: number) => {
+    const handleLocationSelect = async (lat: number, lng: number) => {
         // Limit precision to 6 decimal places to avoid backend validation errors (max_digits=10)
         const latFixed = parseFloat(lat.toFixed(6));
         const lngFixed = parseFloat(lng.toFixed(6));
@@ -171,6 +171,28 @@ export default function EditCustomerModal({
             address_lat: latFixed,
             address_lng: lngFixed,
         }));
+
+        // Reverse geocoding to get open_address
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+                headers: {
+                    'User-Agent': 'BekoSIRS-App/1.0',
+                    'Accept-Language': 'tr-TR,tr;q=0.9'
+                }
+            });
+            const data = await response.json();
+
+            if (data && data.display_name) {
+                // Sadece spesifik kismi alabilmek icin address objesine bakabiliriz
+                // Ama genelde display_name yeterli olur
+                setFormData(prev => ({
+                    ...prev,
+                    open_address: data.display_name
+                }));
+            }
+        } catch (err) {
+            console.warn("Reverse geocoding failed:", err);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {

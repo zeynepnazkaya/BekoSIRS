@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import api from '../services/api';
+import api from '../services';
 
 const ForgotPasswordScreen = () => {
     const router = useRouter();

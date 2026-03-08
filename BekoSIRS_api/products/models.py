@@ -82,6 +82,13 @@ class CustomUser(AbstractUser):
     # KKTC Structured Address (Taşındı -> CustomerAddress)
     # district, area, open_address fields removed
 
+    def save(self, *args, **kwargs):
+        # Convert empty phone_number to None to avoid unique constraint violation
+        # SQL Server treats '' as a duplicate value, but NULL is allowed multiple times
+        if self.phone_number is not None and self.phone_number.strip() == '':
+            self.phone_number = None
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.username} ({self.role})"
 
@@ -510,7 +517,30 @@ class PasswordResetToken(models.Model):
 # -------------------------------
 class DeliveryRoute(models.Model):
     """Belirli bir gün için optimize edilmiş teslimat rotası."""
-    date = models.DateField(unique=True, verbose_name="Tarih")
+    ROUTE_STATUS_CHOICES = (
+        ('PLANNED', 'Planlandı'),
+        ('IN_PROGRESS', 'Devam Ediyor'),
+        ('COMPLETED', 'Tamamlandı'),
+    )
+
+    date = models.DateField(verbose_name="Tarih")
+    
+    # Atanan teslimatçı
+    assigned_driver = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_routes',
+        verbose_name="Teslimatçı",
+        limit_choices_to={'role': 'delivery'}
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=ROUTE_STATUS_CHOICES,
+        default='PLANNED',
+        verbose_name="Rota Durumu"
+    )
     
     # Mağaza (başlangıç noktası) koordinatları
     store_address = models.TextField(
@@ -550,7 +580,8 @@ class DeliveryRoute(models.Model):
         verbose_name_plural = "Teslimat Rotaları"
 
     def __str__(self):
-        return f"Rota: {self.date} ({self.total_distance_km or 0} km)"
+        driver = self.assigned_driver.username if self.assigned_driver else 'Atanmamış'
+        return f"Rota: {self.date} - {driver} ({self.total_distance_km or 0} km)"
 
 
 class DeliveryRouteStop(models.Model):

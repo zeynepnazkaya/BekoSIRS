@@ -22,7 +22,8 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ["list", "retrieve", "popular"]:
             return [AllowAny()]
-        return [IsAuthenticated()]
+        from products.permissions import IsSeller
+        return [IsSeller()]
 
         return queryset
 

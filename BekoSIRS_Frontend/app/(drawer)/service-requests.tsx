@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import { serviceRequestAPI, productOwnershipAPI } from '../../services/api';
+import { serviceRequestAPI, productOwnershipAPI } from '../../services';
 import { Picker } from '@react-native-picker/picker';
 
 interface ServiceRequest {

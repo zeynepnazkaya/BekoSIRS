@@ -181,6 +181,9 @@ export const deliveryAPI = {
     // List deliveries with filters
     list: (params?: any) => api.get('/deliveries/', { params }),
 
+    // Get deliveries by specific date
+    byDate: (date: string) => api.get('/deliveries/by_date/', { params: { date } }),
+
     // Get delivery stats
     stats: (params?: any) => api.get('/deliveries/stats/', { params }),
 
@@ -190,7 +193,54 @@ export const deliveryAPI = {
     // Delete delivery
     delete: (id: number) => api.delete(`/deliveries/${id}/`),
 
-    // Route Optimization
-    optimize: (data: { date: string; delivery_ids?: number[]; depot_id?: number; algorithm?: string }) =>
+    // Assign driver to deliveries
+    assignDriver: (deliveryIds: number[], driverId: number) =>
+        api.post('/deliveries/assign_driver/', { delivery_ids: deliveryIds, driver_id: driverId }),
+
+    // Route Optimization (also available via deliveryRouteAPI.optimize)
+    optimize: (data: { date: string; delivery_ids?: number[]; depot_id?: number }) =>
         api.post('/delivery-routes/optimize/', data),
+};
+
+// ===========================================
+// Assignment APIs
+// ===========================================
+export const assignmentAPI = {
+    // List assignments
+    list: (params?: any) => api.get('/assignments/', { params }),
+
+    // Get stats
+    stats: () => api.get('/assignments/stats/'),
+
+    // Create assignment
+    create: (data: any) => api.post('/assignments/', data),
+
+    // Delete assignment
+    delete: (id: number) => api.delete(`/assignments/${id}/`),
+
+    // Schedule single delivery
+    scheduleDelivery: (id: number, scheduledDate: string, address?: string) =>
+        api.post(`/assignments/${id}/schedule_delivery/`, { scheduled_date: scheduledDate, address }),
+
+    // Batch schedule multiple assignments
+    batchSchedule: (assignmentIds: number[], scheduledDate: string) =>
+        api.post('/assignments/batch_schedule/', { assignment_ids: assignmentIds, scheduled_date: scheduledDate }),
+};
+
+// ===========================================
+// Delivery Route APIs
+// ===========================================
+export const deliveryRouteAPI = {
+    // List routes
+    list: (params?: any) => api.get('/delivery-routes/', { params }),
+
+    // Get routes by date
+    getByDate: (date: string) => api.get('/delivery-routes/', { params: { date } }),
+
+    // Optimize route
+    optimize: (data: { date: string; delivery_ids: number[]; depot_id?: number }) =>
+        api.post('/delivery-routes/optimize/', data),
+
+    // Get route details
+    get: (id: number) => api.get(`/delivery-routes/${id}/`),
 };

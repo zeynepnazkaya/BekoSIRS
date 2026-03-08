@@ -13,24 +13,39 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import api from '../../services/api';
+import api from '../../services';
 import { useAuth } from '../../context/AuthContext';
 
 interface Delivery {
     id: number;
     order_number: string;
     customer_name: string;
+    customer_phone: string;
+    customer_address: string;
     address: string;
     product_name: string;
+    product_model_code: string;
+    quantity: number;
     status: 'WAITING' | 'OUT_FOR_DELIVERY' | 'DELIVERED';
     delivery_order: number;
+}
+
+interface RouteInfo {
+    id: number;
+    total_distance_km: number;
+    total_duration_min: number;
+    status: string;
+    stop_count: number;
+    completed_count: number;
 }
 
 export default function DeliveryDashboard() {
     const { logout } = useAuth();
     const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+    const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [startingRoute, setStartingRoute] = useState(false);
     const [userName, setUserName] = useState('Teslimatçı');
 
     const fetchDeliveries = async () => {
@@ -39,12 +54,31 @@ export default function DeliveryDashboard() {
             setUserName(profileRes.data.first_name || profileRes.data.username || 'Teslimatçı');
 
             const res = await api.get('/api/v1/delivery-person/my_route/');
-            setDeliveries(res.data || []);
+            // New response format: { route: {...}, deliveries: [...] }
+            if (res.data.deliveries) {
+                setDeliveries(res.data.deliveries);
+                setRouteInfo(res.data.route);
+            } else {
+                // Fallback for old format
+                setDeliveries(Array.isArray(res.data) ? res.data : []);
+            }
         } catch (error) {
             console.error('Failed to fetch deliveries:', error);
         } finally {
             setLoading(false);
             setRefreshing(false);
+        }
+    };
+
+    const handleStartRoute = async () => {
+        try {
+            setStartingRoute(true);
+            await api.post('/api/v1/delivery-person/start_route/');
+            fetchDeliveries();
+        } catch (error) {
+            console.error('Failed to start route:', error);
+        } finally {
+            setStartingRoute(false);
         }
     };
 
@@ -134,6 +168,52 @@ export default function DeliveryDashboard() {
                     </View>
                 </View>
 
+                {/* Route Summary Card */}
+                {routeInfo && (
+                    <View style={styles.routeSummaryCard}>
+                        <View style={styles.routeSummaryHeader}>
+                            <Ionicons name="navigate" size={20} color="#005696" />
+                            <Text style={styles.routeSummaryTitle}>Günün Rotası</Text>
+                        </View>
+                        <View style={styles.routeStatsRow}>
+                            <View style={styles.routeStatItem}>
+                                <Text style={styles.routeStatValue}>{routeInfo.total_distance_km}</Text>
+                                <Text style={styles.routeStatLabel}>km</Text>
+                            </View>
+                            <View style={styles.routeStatDivider} />
+                            <View style={styles.routeStatItem}>
+                                <Text style={styles.routeStatValue}>
+                                    {Math.floor(routeInfo.total_duration_min / 60)}s {routeInfo.total_duration_min % 60}dk
+                                </Text>
+                                <Text style={styles.routeStatLabel}>süre</Text>
+                            </View>
+                            <View style={styles.routeStatDivider} />
+                            <View style={styles.routeStatItem}>
+                                <Text style={styles.routeStatValue}>
+                                    {routeInfo.completed_count}/{routeInfo.stop_count}
+                                </Text>
+                                <Text style={styles.routeStatLabel}>tamamlanan</Text>
+                            </View>
+                        </View>
+                        {routeInfo.status === 'PLANNED' && (
+                            <TouchableOpacity
+                                style={styles.startRouteButton}
+                                onPress={handleStartRoute}
+                                disabled={startingRoute}
+                            >
+                                {startingRoute ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <>
+                                        <Ionicons name="play-circle" size={22} color="#fff" />
+                                        <Text style={styles.startRouteText}>Rotayı Başlat</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
+
                 {/* Map Button */}
                 <TouchableOpacity
                     style={styles.mapButton}
@@ -196,12 +276,21 @@ export default function DeliveryDashboard() {
                                 <View style={styles.cardBody}>
                                     <View style={styles.infoRow}>
                                         <Ionicons name="location" size={18} color="#005696" />
-                                        <Text style={styles.addressText} numberOfLines={2}>{delivery.address}</Text>
+                                        <Text style={styles.addressText} numberOfLines={2}>{delivery.customer_address || delivery.address}</Text>
                                     </View>
                                     <View style={styles.productRow}>
                                         <Ionicons name="cube" size={18} color="#94a3b8" />
                                         <Text style={styles.productText}>{delivery.product_name || 'Ürün bilgisi yok'}</Text>
+                                        {delivery.quantity > 1 && (
+                                            <Text style={styles.quantityBadge}>{delivery.quantity} Adet</Text>
+                                        )}
                                     </View>
+                                    {delivery.customer_phone && (
+                                        <View style={styles.infoRow}>
+                                            <Ionicons name="call" size={18} color="#94a3b8" />
+                                            <Text style={styles.addressText}>{delivery.customer_phone}</Text>
+                                        </View>
+                                    )}
                                 </View>
 
                                 {!isDelivered && (
@@ -532,5 +621,80 @@ const styles = StyleSheet.create({
     actionHintText: {
         fontSize: 12,
         color: '#94a3b8',
+    },
+    routeSummaryCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#e0e7ff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    routeSummaryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+    },
+    routeSummaryTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+    },
+    routeStatsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        paddingVertical: 12,
+        backgroundColor: '#f8fafc',
+        borderRadius: 12,
+    },
+    routeStatItem: {
+        alignItems: 'center',
+    },
+    routeStatValue: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#005696',
+    },
+    routeStatLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#94a3b8',
+        marginTop: 2,
+    },
+    routeStatDivider: {
+        width: 1,
+        height: 30,
+        backgroundColor: '#e2e8f0',
+    },
+    startRouteButton: {
+        marginTop: 12,
+        backgroundColor: '#059669',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
+        borderRadius: 12,
+    },
+    startRouteText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    quantityBadge: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
     },
 });
