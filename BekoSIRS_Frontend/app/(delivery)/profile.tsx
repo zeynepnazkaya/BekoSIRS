@@ -13,7 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { deleteToken } from '../../storage/storage.native';
 
 interface UserProfile {
     id: number;
@@ -26,7 +27,6 @@ interface UserProfile {
 }
 
 export default function DeliveryProfileScreen() {
-    const { logout } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -53,7 +53,11 @@ export default function DeliveryProfileScreen() {
                 {
                     text: 'Çıkış Yap',
                     style: 'destructive',
-                    onPress: logout,
+                    onPress: async () => {
+                        await deleteToken();
+                        await AsyncStorage.removeItem('userRole');
+                        router.replace('/login');
+                    },
                 },
             ]
         );

@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.BekoSIRS-Frontend"
+      "bundleIdentifier": "com.anonymous.BekoSIRS-Frontend",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "BekoSIRS uygulamasına güvenli giriş yapmak için Face ID kullanır."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -40,7 +43,13 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "BekoSIRS uygulamasına güvenli giriş yapmak için Face ID kullanır."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

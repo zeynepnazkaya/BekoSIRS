@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { View, TextInput, Button, StyleSheet, Text, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
+import {
+  View, TextInput, StyleSheet, Text, SafeAreaView,
+  Alert, ActivityIndicator, TouchableOpacity,
+  KeyboardAvoidingView, Platform, ScrollView
+} from 'react-native';
 import api from '../services/api';
 import { router } from 'expo-router';
 
@@ -61,70 +65,84 @@ const RegisterScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Yeni Hesap Oluştur</Text>
-        <Text style={styles.subtitle}>Beko Müşteri Paneli</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.title}>Yeni Hesap Oluştur</Text>
+          <Text style={styles.subtitle}>Beko Müşteri Paneli</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Kullanıcı Adı*"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Kullanıcı Adı*"
+            placeholderTextColor="#999"
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="E-posta*"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="E-posta*"
+            placeholderTextColor="#999"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Şifre*"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Şifre*"
+            placeholderTextColor="#999"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Ad"
-          value={firstName}
-          onChangeText={setFirstName}
-          autoCapitalize="words"
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Ad"
+            placeholderTextColor="#999"
+            value={firstName}
+            onChangeText={setFirstName}
+            autoCapitalize="words"
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Soyad"
-          value={lastName}
-          onChangeText={setLastName}
-          autoCapitalize="words"
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="Soyad"
+            placeholderTextColor="#999"
+            value={lastName}
+            onChangeText={setLastName}
+            autoCapitalize="words"
+          />
 
-        <View style={styles.buttonContainer}>
-          {loading ? (
-            <ActivityIndicator size="large" color="#000" />
-          ) : (
-            <>
-              <TouchableOpacity style={styles.mainButton} onPress={handleRegister}>
-                <Text style={styles.buttonText}>Kayıt Ol</Text>
-              </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            {loading ? (
+              <ActivityIndicator size="large" color="#000" />
+            ) : (
+              <>
+                <TouchableOpacity style={styles.mainButton} onPress={handleRegister}>
+                  <Text style={styles.buttonText}>Kayıt Ol</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => router.back()}>
-                <Text style={styles.secondaryButtonText}>Giriş Ekranına Dön</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => router.back()}>
+                  <Text style={styles.secondaryButtonText}>Giriş Ekranına Dön</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -161,6 +179,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+    color: '#000000',
   },
   buttonContainer: {
     marginTop: 10,
@@ -186,6 +205,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
-
-import { TouchableOpacity } from 'react-native'; // Button yerine TouchableOpacity kullanmak için ekledim
 export default RegisterScreen;

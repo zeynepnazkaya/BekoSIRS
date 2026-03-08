@@ -201,14 +201,14 @@ export const useBiometric = () => {
             // Authenticate with device biometric
             const authResult = await LocalAuthentication.authenticateAsync({
                 promptMessage: `${getBiometricDisplayName()} ile giriş yapın`,
-                cancelLabel: 'Şifre ile gir',
-                disableDeviceFallback: false,
+                cancelLabel: 'İptal',
+                disableDeviceFallback: false, // Passcode fallback'i kapatıp Face ID'yi zorluyoruz
             });
 
             if (!authResult.success) {
                 return {
                     success: false,
-                    error: authResult.error === 'user_cancel' ? 'cancelled' : 'Kimlik doğrulama başarısız.',
+                    error: authResult.error === 'user_cancel' ? 'cancelled' : `Cihaz Hatası: ${authResult.error || 'Kimlik doğrulama başarısız.'}`,
                 };
             }
 
@@ -253,9 +253,12 @@ export const useBiometric = () => {
                 };
             }
 
+            const errorMsg = error.response?.data?.error || error.response?.data?.detail;
+            console.error('Biometric authentication failed:', errorMsg || error.message);
+
             return {
                 success: false,
-                error: error.response?.data?.error || 'Giriş başarısız.',
+                error: errorMsg || (error.request ? 'Sunucuya bağlanılamadı.' : 'Giriş işlemi başarısız oldu.'),
             };
         } finally {
             setLoading(false);

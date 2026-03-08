@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import api from '../../services/api';
 import { useBiometric } from '../../hooks/useBiometric';
-import { getToken } from '../../storage/storage.native';
+import { getToken, getRefreshToken } from '../../storage/storage.native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SettingsScreen() {
@@ -51,7 +51,7 @@ export default function SettingsScreen() {
 
   const loadUserInfo = async () => {
     try {
-      const response = await api.get('/api/profile/');
+      const response = await api.get('/api/v1/profile/');
       setUserId(response.data.id);
     } catch (error) {
       console.error('Failed to load user info:', error);
@@ -73,13 +73,12 @@ export default function SettingsScreen() {
         return;
       }
 
-      // For enabling, we need refresh token but we store access token
-      // We'll use AsyncStorage for this demo
-      const refreshToken = await AsyncStorage.getItem('refresh_token');
+      // Get refresh token from secure storage
+      const refreshToken = await getRefreshToken();
       if (!refreshToken) {
         Alert.alert(
           'Yeniden Giriş Gerekli',
-          'Biyometrik girişi etkinleştirmek için çıkış yapıp tekrar giriş yapın.'
+          'Biyometrik girişi etkinleştirmek için çıkış yapıp tekrar giriş yapın (güvenlik için).'
         );
         return;
       }
@@ -109,7 +108,7 @@ export default function SettingsScreen() {
 
     setLoading(true);
     try {
-      await api.post('/api/change-password/', {
+      await api.post('/api/v1/change-password/', {
         old_password: currentPassword,
         new_password: newPassword,
       });
@@ -140,7 +139,7 @@ export default function SettingsScreen() {
 
     setLoading(true);
     try {
-      await api.post('/api/change-email/', {
+      await api.post('/api/v1/change-email/', {
         new_email: newEmail,
         password: passwordForEmail,
       });
@@ -244,6 +243,27 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
               )}
+
+              {/* Logout Section moved here to avoid redundancy */}
+              <View style={[styles.sectionHeader, { marginTop: 30 }]}>
+                <Text style={styles.sectionTitle}>Oturum İşlemleri</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: '#DC2626' }]}
+                onPress={async () => {
+                  try {
+                    const { clearAllTokens } = require('../../storage/storage.native');
+                    const { router } = require('expo-router');
+                    await AsyncStorage.clear();
+                    await clearAllTokens();
+                    router.replace('/login');
+                  } catch (e) {
+                    console.error("Logout failed", e);
+                  }
+                }}
+              >
+                <Text style={styles.saveButtonText}>Çıkış Yap</Text>
+              </TouchableOpacity>
             </>
           )}
 

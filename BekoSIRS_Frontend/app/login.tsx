@@ -41,9 +41,9 @@ const LoginScreen = () => {
 
         if (result.success && result.accessToken && result.refreshToken) {
             await saveTokens(result.accessToken, result.refreshToken);
-            // Optional: You could ensure user_role is set correctly depending on backend response here
-            await AsyncStorage.setItem('user_role', 'customer');
-            router.replace('/' as any);
+            // Standart role anahtarını kullanıyoruz (camelCase)
+            await AsyncStorage.setItem('userRole', 'customer');
+            router.replace('/(drawer)' as any);
         } else if (result.error !== 'cancelled') {
             Alert.alert("Giriş Başarısız", result.error || "Biyometrik doğrulama başarısız oldu.");
         }
