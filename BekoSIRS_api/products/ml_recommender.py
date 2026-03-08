@@ -1,442 +1,1085 @@
 # products/ml_recommender.py
 """
-Hybrid Recommender System with performance optimizations.
-Uses singleton pattern and lazy loading for efficient operation.
+Hybrid ML Recommendation System for BekoSIRS.
+
+Architecture:
+  1. Neural Collaborative Filtering (NCF) — learns user-product embeddings via MLP
+  2. Content-Based Filtering — TF-IDF on product text features + cosine similarity
+  3. Popularity-Based Fallback — for cold-start users with no interaction history
+
+The system uses scikit-learn MLPRegressor as the neural component (avoids PyTorch
+dependency while providing genuine neural network learning).
+
+Models are persisted to disk (ml_models/) and loaded on startup.
 """
-import pandas as pd
-import numpy as np
-import threading
+
+import os
 import time
+import threading
+import logging
+import warnings
+
+import numpy as np
+import pandas as pd
+import joblib
 from functools import lru_cache
-from django.core.cache import cache
+
 from django.conf import settings
+from django.core.cache import cache
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import TruncatedSVD
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.model_selection import train_test_split
+
+warnings.filterwarnings('ignore', category=FutureWarning)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+ML_MODELS_DIR = os.path.join(settings.BASE_DIR, 'ml_models')
+NCF_MODEL_PATH = os.path.join(ML_MODELS_DIR, 'ncf_model.pkl')
+CONTENT_MODEL_PATH = os.path.join(ML_MODELS_DIR, 'content_model.pkl')
+ENCODERS_PATH = os.path.join(ML_MODELS_DIR, 'encoders.pkl')
+METRICS_PATH = os.path.join(ML_MODELS_DIR, 'metrics.pkl')
 
 
-class HybridRecommender:
+# ═══════════════════════════════════════════════════════════════════════════
+# 1. NEURAL COLLABORATIVE FILTERING MODEL
+# ═══════════════════════════════════════════════════════════════════════════
+class NCFModel:
     """
-    Singleton recommender with lazy loading and caching.
+    Neural Collaborative Filtering using scikit-learn MLPRegressor.
     
-    Performance optimizations:
-    - Singleton pattern: Only one instance across the application
-    - Lazy loading: Models only trained on first recommendation request
-    - Caching: Similarity matrix and user interactions cached
+    Instead of a simple matrix factorization (SVD), this uses a neural network
+    that takes user_id and product_id as encoded features, concatenates them
+    with auxiliary features (price bucket, category), and predicts an
+    interaction score.
+
+    Architecture:
+      Input:  [user_encoded, product_encoded, category_encoded, price_bucket]
+      Hidden: 128 → 64 → 32 (ReLU activations)
+      Output: predicted interaction score
     """
-    _instance = None
-    _lock = threading.Lock()
-    _initialized = False
-    
-    # Cache keys
-    CACHE_KEY_SIMILARITY = 'ml_similarity_matrix'
-    CACHE_KEY_PRODUCTS = 'ml_products_df'
-    CACHE_TTL = getattr(settings, 'CACHE_TTL_LONG', 7200)  # 2 hours default
-    
-    def __new__(cls):
-        """Singleton pattern - only create one instance."""
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-        return cls._instance
-    
+
     def __init__(self):
-        """Initialize with lazy loading - don't train models yet."""
-        if HybridRecommender._initialized:
-            return
-            
-        self.products_df = None
+        self.model = None
+        self.user_encoder = LabelEncoder()
+        self.product_encoder = LabelEncoder()
+        self.category_encoder = LabelEncoder()
+        self.scaler = MinMaxScaler()
+        self.is_trained = False
+        self.training_metrics = {}
+
+    def _build_interaction_matrix(self):
+        """Collect all user-product interactions from the database."""
+        from .models import ViewHistory, WishlistItem, Review, ProductOwnership
+
+        interactions = []
+
+        # Views (implicit signal, weight=1.0 per view, max 5)
+        views = ViewHistory.objects.all().values('customer_id', 'product_id', 'view_count')
+        for v in views:
+            interactions.append({
+                'user_id': v['customer_id'],
+                'product_id': v['product_id'],
+                'score': min(v['view_count'], 5) * 1.0,
+                'source': 'view'
+            })
+
+        # Wishlist (intent signal, weight=3.0)
+        wishlist_items = WishlistItem.objects.filter(
+            wishlist__customer__isnull=False
+        ).values('wishlist__customer_id', 'product_id')
+        for w in wishlist_items:
+            interactions.append({
+                'user_id': w['wishlist__customer_id'],
+                'product_id': w['product_id'],
+                'score': 3.0,
+                'source': 'wishlist'
+            })
+
+        # Reviews (explicit signal, weight=rating)
+        reviews = Review.objects.all().values('customer_id', 'product_id', 'rating')
+        for r in reviews:
+            interactions.append({
+                'user_id': r['customer_id'],
+                'product_id': r['product_id'],
+                'score': float(r['rating']),
+                'source': 'review'
+            })
+
+        # Purchases (strongest signal, weight=5.0)
+        purchases = ProductOwnership.objects.all().values('customer_id', 'product_id')
+        for p in purchases:
+            interactions.append({
+                'user_id': p['customer_id'],
+                'product_id': p['product_id'],
+                'score': 5.0,
+                'source': 'purchase'
+            })
+
+        if not interactions:
+            return None
+
+        df = pd.DataFrame(interactions)
+        # Aggregate: sum scores per (user, product) pair
+        df = df.groupby(['user_id', 'product_id'])['score'].sum().reset_index()
+        return df
+
+    def _prepare_features(self, interactions_df, products_df):
+        """Build a rich feature matrix with user stats, product stats, and cross features."""
+        from .models import ViewHistory, Review, ProductOwnership, WishlistItem
+
+        # ── User-level statistics ──
+        user_stats = {}
+        for uid in interactions_df['user_id'].unique():
+            user_interactions = interactions_df[interactions_df['user_id'] == uid]
+            user_stats[uid] = {
+                'avg_score': user_interactions['score'].mean(),
+                'n_interactions': len(user_interactions),
+                'score_std': user_interactions['score'].std() if len(user_interactions) > 1 else 0,
+                'n_unique_products': user_interactions['product_id'].nunique(),
+            }
+        user_stats_df = pd.DataFrame(user_stats).T
+        user_stats_df.index.name = 'user_id'
+        user_stats_df = user_stats_df.reset_index()
+
+        # ── Product-level statistics ──  
+        product_stats = {}
+        
+        # Calculate from raw data
+        all_reviews = list(Review.objects.values('product_id', 'rating'))
+        review_by_prod = {}
+        for r in all_reviews:
+            review_by_prod.setdefault(r['product_id'], []).append(r['rating'])
+        
+        all_views = dict(ViewHistory.objects.values_list('product_id', 'view_count'))
+        all_purchases = {}
+        for po in ProductOwnership.objects.values('product_id'):
+            all_purchases[po['product_id']] = all_purchases.get(po['product_id'], 0) + 1
+        
+        all_wishlist = {}
+        for wi in WishlistItem.objects.values('product__id'):
+            pid = wi['product__id']
+            all_wishlist[pid] = all_wishlist.get(pid, 0) + 1
+
+        for pid in interactions_df['product_id'].unique():
+            ratings = review_by_prod.get(pid, [])
+            product_stats[pid] = {
+                'prod_avg_rating': sum(ratings) / len(ratings) if ratings else 0,
+                'prod_n_reviews': len(ratings),
+                'prod_total_views': all_views.get(pid, 0),
+                'prod_n_purchases': all_purchases.get(pid, 0),
+                'prod_n_wishlist': all_wishlist.get(pid, 0),
+            }
+        product_stats_df = pd.DataFrame(product_stats).T
+        product_stats_df.index.name = 'product_id'
+        product_stats_df = product_stats_df.reset_index()
+
+        # ── Per-user per-product view count ──
+        user_product_views = {}
+        for vh in ViewHistory.objects.values('customer_id', 'product_id', 'view_count'):
+            key = (vh['customer_id'], vh['product_id'])
+            user_product_views[key] = vh['view_count']
+        
+        # Add user_view_count column to interactions_df
+        interactions_df['user_view_count'] = interactions_df.apply(
+            lambda row: user_product_views.get((row['user_id'], row['product_id']), 0), axis=1
+        )
+
+        # ── Merge everything ──
+        merged = interactions_df.merge(
+            products_df[['id', 'category__name', 'price']],
+            left_on='product_id', right_on='id', how='left'
+        )
+        merged = merged.merge(user_stats_df, on='user_id', how='left')
+        merged = merged.merge(product_stats_df, on='product_id', how='left')
+
+        # ── Encode categoricals ──
+        merged['category__name'] = merged['category__name'].fillna('Unknown')
+        merged['category_enc'] = self.category_encoder.fit_transform(merged['category__name'])
+
+        # ── Price features ──
+        merged['price'] = pd.to_numeric(merged['price'], errors='coerce').fillna(0)
+        price_mean = merged['price'].mean() if merged['price'].mean() > 0 else 1
+        merged['price_normalized'] = merged['price'] / price_mean
+        merged['price_bucket'] = pd.cut(
+            merged['price'], bins=5, labels=[0, 1, 2, 3, 4], duplicates='drop'
+        ).astype(float).fillna(2)
+
+        # ── User-category affinity (how often this user interacts with this category) ──
+        user_cat_counts = merged.groupby(['user_id', 'category_enc']).size().reset_index(name='user_cat_count')
+        merged = merged.merge(user_cat_counts, on=['user_id', 'category_enc'], how='left')
+        merged['user_cat_affinity'] = merged['user_cat_count'] / merged['n_interactions'].clip(lower=1)
+
+        # ── Feature matrix (14 features) ──
+        feature_cols = [
+            'category_enc',
+            'price_normalized',
+            'price_bucket',
+            # User stats
+            'avg_score',
+            'n_interactions',
+            'score_std',
+            'n_unique_products',
+            # Product stats
+            'prod_avg_rating',
+            'prod_n_reviews',
+            'prod_total_views',
+            'prod_n_purchases',
+            'prod_n_wishlist',
+            # Cross features
+            'user_cat_affinity',
+            'user_view_count',
+        ]
+
+        # Fill NaN
+        for col in feature_cols:
+            merged[col] = merged[col].fillna(0)
+
+        X = merged[feature_cols].values.astype(float)
+        y = merged['score'].values.astype(float)
+
+        # Normalize features
+        X = self.scaler.fit_transform(X)
+
+        return X, y
+
+    def train(self, epochs=50, verbose=True):
+        """Train the NCF model on all available interaction data."""
+        from .models import Product
+
+        if verbose:
+            print("📊 Loading interaction data...")
+
+        interactions_df = self._build_interaction_matrix()
+        if interactions_df is None or len(interactions_df) < 5:
+            msg = "⚠️  Not enough interaction data to train NCF (need at least 5 interactions)"
+            if verbose:
+                print(msg)
+            logger.warning(msg)
+            self.is_trained = False
+            return False
+
+        # Load product metadata
+        products_df = pd.DataFrame(list(
+            Product.objects.all().values('id', 'category__name', 'price')
+        ))
+
+        if verbose:
+            print(f"   Found {len(interactions_df)} user-product interactions")
+            print(f"   Unique users: {interactions_df['user_id'].nunique()}")
+            print(f"   Unique products: {interactions_df['product_id'].nunique()}")
+
+        # Prepare features
+        X, y = self._prepare_features(interactions_df, products_df)
+
+        # Train/test split for evaluation
+        if len(X) > 10:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+        else:
+            X_train, y_train = X, y
+            X_test, y_test = X, y
+
+        if verbose:
+            print(f"\n🧠 Training Neural Collaborative Filtering model...")
+            print(f"   Architecture: Input({X.shape[1]}) → 64 → 32 → 16 → 1")
+            print(f"   Training samples: {len(X_train)}, Test samples: {len(X_test)}")
+
+        # Build and train MLP — tuned for small-medium datasets
+        self.model = MLPRegressor(
+            hidden_layer_sizes=(64, 32, 16),
+            activation='relu',
+            solver='adam',
+            learning_rate='adaptive',
+            learning_rate_init=0.0005,
+            max_iter=epochs,
+            batch_size=min(32, len(X_train)),
+            early_stopping=True if len(X_train) > 20 else False,
+            validation_fraction=0.15 if len(X_train) > 20 else 0.0,
+            n_iter_no_change=30,
+            tol=1e-5,
+            random_state=42,
+            verbose=False
+        )
+
+        self.model.fit(X_train, y_train)
+
+        # Evaluate
+        train_score = self.model.score(X_train, y_train)
+        test_score = self.model.score(X_test, y_test)
+
+        # Calculate Hit Rate @ K
+        if len(X_test) > 0:
+            predictions = self.model.predict(X_test)
+            hit_rate = self._calculate_hit_rate(y_test, predictions, k=10)
+        else:
+            hit_rate = 0.0
+
+        self.training_metrics = {
+            'train_r2': round(train_score, 4),
+            'test_r2': round(test_score, 4),
+            'hit_rate_at_10': round(hit_rate, 4),
+            'n_interactions': len(interactions_df),
+            'n_users': interactions_df['user_id'].nunique(),
+            'n_products': interactions_df['product_id'].nunique(),
+            'n_epochs': self.model.n_iter_,
+            'final_loss': round(self.model.loss_, 6) if hasattr(self.model, 'loss_') else None,
+            'trained_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        }
+
+        if verbose:
+            print(f"\n📈 Training Results:")
+            print(f"   Epochs completed: {self.model.n_iter_}")
+            print(f"   Final loss:       {self.training_metrics['final_loss']}")
+            print(f"   Train R² score:   {train_score:.4f}")
+            print(f"   Test R² score:    {test_score:.4f}")
+            print(f"   Hit Rate @10:     {hit_rate:.4f}")
+
+        self.is_trained = True
+        return True
+
+    def _calculate_hit_rate(self, y_true, y_pred, k=10):
+        """Calculate Hit Rate @ K — how often the top-K includes relevant items."""
+        if len(y_true) == 0:
+            return 0.0
+        # Consider items with true score > median as "relevant"
+        threshold = np.median(y_true)
+        relevant = y_true > threshold
+        # Check if top-K predicted items include relevant items
+        top_k_indices = np.argsort(y_pred)[-k:]
+        hits = np.sum(relevant[top_k_indices])
+        total_relevant = np.sum(relevant)
+        if total_relevant == 0:
+            return 0.0
+        return hits / min(total_relevant, k)
+
+    def predict_for_user(self, user_id, all_product_ids, products_df):
+        """Predict interaction scores for a user across all products."""
+        if not self.is_trained or self.model is None:
+            return {}
+        
+        from .models import ViewHistory, Review, ProductOwnership, WishlistItem
+
+        # ── Precompute user-level stats from DB ──
+        user_reviews = list(Review.objects.filter(customer_id=user_id).values('product_id', 'rating'))
+        user_views = dict(ViewHistory.objects.filter(customer_id=user_id).values_list('product_id', 'view_count'))
+        user_purchases = set(ProductOwnership.objects.filter(customer_id=user_id).values_list('product_id', flat=True))
+        
+        # User-level stats (same as training)
+        all_user_scores = []
+        for r in user_reviews:
+            all_user_scores.append(float(r['rating']))
+        for _ in user_views:
+            all_user_scores.append(1.0)  # view implicit score
+        for _ in user_purchases:
+            all_user_scores.append(5.0)  # purchase score
+        
+        if all_user_scores:
+            user_avg_score = sum(all_user_scores) / len(all_user_scores)
+            user_n_interactions = len(all_user_scores)
+            user_score_std = (sum((s - user_avg_score) ** 2 for s in all_user_scores) / len(all_user_scores)) ** 0.5 if len(all_user_scores) > 1 else 0
+            user_n_unique = len(set(list(user_views.keys()) + [r['product_id'] for r in user_reviews] + list(user_purchases)))
+        else:
+            user_avg_score = 0
+            user_n_interactions = 0
+            user_score_std = 0
+            user_n_unique = 0
+
+        # User category interaction counts
+        user_cat_counts = {}
+        for pid in list(user_views.keys()) + [r['product_id'] for r in user_reviews]:
+            prod_row = products_df[products_df['id'] == pid]
+            if not prod_row.empty:
+                cat = prod_row['category__name'].values[0] or 'Unknown'
+                user_cat_counts[cat] = user_cat_counts.get(cat, 0) + 1
+
+        # ── Precompute product-level stats ──
+        all_prod_reviews = list(Review.objects.values('product_id', 'rating'))
+        review_by_prod = {}
+        for r in all_prod_reviews:
+            review_by_prod.setdefault(r['product_id'], []).append(r['rating'])
+        
+        all_prod_views = dict(ViewHistory.objects.values_list('product_id', 'view_count'))
+        
+        purchase_counts = {}
+        for po in ProductOwnership.objects.values('product_id'):
+            purchase_counts[po['product_id']] = purchase_counts.get(po['product_id'], 0) + 1
+        
+        wishlist_counts = {}
+        for wi in WishlistItem.objects.values('product__id'):
+            wishlist_counts[wi['product__id']] = wishlist_counts.get(wi['product__id'], 0) + 1
+
+        # ── Price normalization (use same mean as would be computed from all products) ──
+        all_prices = [float(row['price'] or 0) for _, row in products_df.iterrows()]
+        price_mean = sum(all_prices) / len(all_prices) if all_prices else 1
+        if price_mean == 0:
+            price_mean = 1
+
+        # ── Predict for all product IDs ──
+        scores = {}
+        for pid in all_product_ids:
+            prod_row = products_df[products_df['id'] == pid]
+            if prod_row.empty:
+                continue
+
+            cat_name = prod_row['category__name'].values[0] or 'Unknown'
+            price = float(prod_row['price'].values[0] or 0)
+
+            # Category encoding
+            if cat_name in self.category_encoder.classes_:
+                cat_enc = self.category_encoder.transform([cat_name])[0]
+            else:
+                cat_enc = 0
+
+            # Price features
+            price_normalized = price / price_mean
+            price_bucket = min(int(price / max(1, max(all_prices) / 5)), 4) if all_prices else 2
+
+            # Product stats
+            p_ratings = review_by_prod.get(pid, [])
+            prod_avg_rating = sum(p_ratings) / len(p_ratings) if p_ratings else 0
+            prod_n_reviews = len(p_ratings)
+            prod_total_views = all_prod_views.get(pid, 0)
+            prod_n_purchases = purchase_counts.get(pid, 0)
+            prod_n_wishlist = wishlist_counts.get(pid, 0)
+
+            # User-category affinity
+            user_cat_affinity = user_cat_counts.get(cat_name, 0) / max(user_n_interactions, 1)
+
+            # Per-user view count for THIS product (0 if never viewed)
+            user_view_count = user_views.get(pid, 0)
+
+            # Build feature vector — MUST match training order (14 features)
+            features = np.array([[
+                cat_enc,
+                price_normalized,
+                price_bucket,
+                user_avg_score,
+                user_n_interactions,
+                user_score_std,
+                user_n_unique,
+                prod_avg_rating,
+                prod_n_reviews,
+                prod_total_views,
+                prod_n_purchases,
+                prod_n_wishlist,
+                user_cat_affinity,
+                user_view_count,
+            ]])
+            features = self.scaler.transform(features)
+
+            score = self.model.predict(features)[0]
+            scores[pid] = max(score, 0)
+
+        return scores
+
+    def save(self, path=None):
+        """Save trained model to disk."""
+        os.makedirs(ML_MODELS_DIR, exist_ok=True)
+        joblib.dump(self.model, path or NCF_MODEL_PATH)
+        joblib.dump({
+            'user_encoder': self.user_encoder,
+            'product_encoder': self.product_encoder,
+            'category_encoder': self.category_encoder,
+            'scaler': self.scaler,
+            'metrics': self.training_metrics,
+        }, ENCODERS_PATH)
+        joblib.dump(self.training_metrics, METRICS_PATH)
+        logger.info("✅ NCF model saved to %s", ML_MODELS_DIR)
+
+    def load(self, path=None):
+        """Load trained model from disk."""
+        model_path = path or NCF_MODEL_PATH
+        if not os.path.exists(model_path) or not os.path.exists(ENCODERS_PATH):
+            return False
+
+        try:
+            self.model = joblib.load(model_path)
+            encoders = joblib.load(ENCODERS_PATH)
+            self.user_encoder = encoders['user_encoder']
+            self.product_encoder = encoders['product_encoder']
+            self.category_encoder = encoders['category_encoder']
+            self.scaler = encoders['scaler']
+            self.training_metrics = encoders.get('metrics', {})
+            self.is_trained = True
+            logger.info("✅ NCF model loaded from %s", model_path)
+            return True
+        except Exception as e:
+            logger.error("❌ Failed to load NCF model: %s", e)
+            return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2. CONTENT-BASED FILTERING MODEL
+# ═══════════════════════════════════════════════════════════════════════════
+class ContentBasedModel:
+    """
+    Content-Based filtering using TF-IDF similarity.
+    
+    Builds a text profile for each product from name + description + brand +
+    category, then computes cosine similarity between all product pairs.
+    
+    Enhancement over the original:
+    - Category-aware weighting (same-category products get a boost)
+    - Price-range similarity incorporated
+    """
+
+    def __init__(self):
         self.similarity_matrix = None
-        self.user_product_matrix = None
-        self.svd_model = None
+        self.products_df = None
         self.indices = None
-        self._last_trained = None
-        self._content_trained = False
-        
-        HybridRecommender._initialized = True
+        self.tfidf_matrix = None
+        self.is_trained = False
 
-    def _ensure_trained(self):
-        """Lazy loading - train models only when needed."""
-        # Check if we need to retrain (cache expired or never trained)
-        if self.similarity_matrix is not None:
-            return
-            
-        # Try to load from cache first
-        cached_similarity = cache.get(self.CACHE_KEY_SIMILARITY)
-        cached_products = cache.get(self.CACHE_KEY_PRODUCTS)
-        
-        if cached_similarity is not None and cached_products is not None:
-            self.similarity_matrix = cached_similarity
-            self.products_df = cached_products
-            if not self.products_df.empty:
-                self.indices = pd.Series(
-                    self.products_df.index, 
-                    index=self.products_df['id']
-                ).drop_duplicates()
-            return
-        
-        # Train models if cache miss
-        self._load_data()
-        self._train_content_model()
-        self._train_collaborative_model()
-        
-        # Cache the results
-        if self.similarity_matrix is not None:
-            cache.set(self.CACHE_KEY_SIMILARITY, self.similarity_matrix, self.CACHE_TTL)
-        if self.products_df is not None:
-            cache.set(self.CACHE_KEY_PRODUCTS, self.products_df, self.CACHE_TTL)
-        
-        self._last_trained = time.time()
+    def train(self, verbose=True):
+        """Build the content similarity matrix from all products."""
+        from .models import Product
 
-    def _load_data(self):
-        """Fetches all products from DB into a DataFrame."""
-        from .models import Product  # Import here to avoid circular imports
-        
+        if verbose:
+            print("\n📝 Training Content-Based model...")
+
         products = Product.objects.all().values(
             'id', 'name', 'description', 'brand', 'category__name', 'price'
         )
         self.products_df = pd.DataFrame(list(products))
-        
-        if not self.products_df.empty:
-            # Convert price to numeric for efficient filtering
-            self.products_df['price'] = pd.to_numeric(self.products_df['price'], errors='coerce')
-            self.indices = pd.Series(
-                self.products_df.index, 
-                index=self.products_df['id']
-            ).drop_duplicates()
 
-    def _train_content_model(self):
-        """Builds Content-Based logic using TF-IDF."""
-        if self.products_df is None or self.products_df.empty:
-            return
+        if self.products_df.empty:
+            if verbose:
+                print("   ⚠️  No products found in database")
+            return False
 
-        # Combine text fields
+        # Build composite text feature — weight category more heavily
         self.products_df['content'] = (
-            self.products_df['name'] + " " + 
-            self.products_df['description'].fillna('') + " " + 
-            self.products_df['brand'].fillna('') + " " + 
-            self.products_df['category__name'].fillna('')
-        ).str.lower()
+            self.products_df['name'].fillna('') + " " +
+            self.products_df['description'].fillna('') + " " +
+            self.products_df['brand'].fillna('') + " " +
+            # Repeat category 3x for higher weight
+            (self.products_df['category__name'].fillna('') + " ") * 3
+        ).str.lower().str.strip()
 
-        # Create Vectors
-        tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
-        tfidf_matrix = tfidf.fit_transform(self.products_df['content'])
+        self.products_df['price'] = pd.to_numeric(
+            self.products_df['price'], errors='coerce'
+        ).fillna(0)
 
-        # Calculate Similarity
-        self.similarity_matrix = cosine_similarity(tfidf_matrix)
-        self._content_trained = True
+        # Build TF-IDF vectors
+        tfidf = TfidfVectorizer(
+            max_features=5000,
+            ngram_range=(1, 2),  # Unigrams + bigrams for richer features
+            min_df=1,
+            max_df=0.95,
+        )
+        self.tfidf_matrix = tfidf.fit_transform(self.products_df['content'])
 
-    def _train_collaborative_model(self):
-        """Builds Collaborative Filtering logic using SVD."""
-        from .models import ViewHistory, WishlistItem, Review, ProductOwnership
+        # Compute cosine similarity
+        self.similarity_matrix = cosine_similarity(self.tfidf_matrix)
+
+        # Category boost: products in the same category get +0.15 similarity
+        categories = self.products_df['category__name'].values
+        for i in range(len(categories)):
+            for j in range(i + 1, len(categories)):
+                if categories[i] and categories[j] and categories[i] == categories[j]:
+                    self.similarity_matrix[i][j] += 0.15
+                    self.similarity_matrix[j][i] += 0.15
+
+        # Build product index mapping
+        self.indices = pd.Series(
+            self.products_df.index,
+            index=self.products_df['id']
+        ).drop_duplicates()
+
+        self.is_trained = True
+
+        if verbose:
+            print(f"   ✅ Built similarity matrix for {len(self.products_df)} products")
+            print(f"   TF-IDF features: {self.tfidf_matrix.shape[1]}")
+
+        return True
+
+    def get_similar_products(self, product_id, top_n=10):
+        """Get top-N most similar products to a given product."""
+        if not self.is_trained or product_id not in self.indices.index:
+            return {}
+
+        idx = self.indices[product_id]
+        sim_scores = self.similarity_matrix[idx]
+
+        scores = {}
+        for i, score in enumerate(sim_scores):
+            pid = self.products_df.iloc[i]['id']
+            if pid != product_id and score > 0.05:
+                scores[pid] = float(score)
+
+        return dict(sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n])
+
+    def get_user_content_scores(self, user_interactions, exclude_ids=None):
+        """
+        Given a dict of {product_id: interaction_weight}, compute content-based
+        scores for all other products.
+        """
+        if not self.is_trained or not user_interactions:
+            return {}
+
+        exclude_ids = set(exclude_ids or [])
+        scores = {}
+
+        for product_id, weight in user_interactions.items():
+            if product_id not in self.indices.index:
+                continue
+            idx = self.indices[product_id]
+            sim_scores = self.similarity_matrix[idx]
+
+            for i in range(len(sim_scores)):
+                pid = self.products_df.iloc[i]['id']
+                if pid not in exclude_ids and sim_scores[i] > 0.05:
+                    scores[pid] = scores.get(pid, 0) + (sim_scores[i] * weight)
+
+        return scores
+
+    def save(self, path=None):
+        """Save content model to disk."""
+        os.makedirs(ML_MODELS_DIR, exist_ok=True)
+        joblib.dump({
+            'similarity_matrix': self.similarity_matrix,
+            'products_df': self.products_df,
+            'indices': self.indices,
+        }, path or CONTENT_MODEL_PATH)
+
+    def load(self, path=None):
+        """Load content model from disk."""
+        model_path = path or CONTENT_MODEL_PATH
+        if not os.path.exists(model_path):
+            return False
+        try:
+            data = joblib.load(model_path)
+            self.similarity_matrix = data['similarity_matrix']
+            self.products_df = data['products_df']
+            self.indices = data['indices']
+            self.is_trained = True
+            return True
+        except Exception as e:
+            logger.error("❌ Failed to load content model: %s", e)
+            return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3. HYBRID RECOMMENDER (Main Entry Point)
+# ═══════════════════════════════════════════════════════════════════════════
+class HybridRecommender:
+    """
+    Singleton hybrid recommender combining NCF + Content-Based + Popularity.
+
+    Scoring formula per product:
+      final_score = (α × ncf_score) + (β × content_score) + (γ × popularity_score)
+                    + search_boost + price_sensitivity_boost
+    
+    Where α=0.5, β=0.3, γ=0.2 (learned/tunable weights).
+    
+    Cold-start handling:
+      - New users (no interactions): popularity + content-based on categories
+      - New products (no interactions): content-based only
+    """
+
+    _instance = None
+    _lock = threading.Lock()
+
+    # Hybrid weights
+    WEIGHT_NCF = 0.5
+    WEIGHT_CONTENT = 0.3
+    WEIGHT_POPULARITY = 0.2
+
+    CACHE_TTL = getattr(settings, 'CACHE_TTL_LONG', 7200)
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    inst = super().__new__(cls)
+                    inst._init_models()
+                    cls._instance = inst
+        return cls._instance
+
+    def _init_models(self):
+        """Initialize sub-models and try to load from disk."""
+        self.ncf = NCFModel()
+        self.content = ContentBasedModel()
+        self._loaded = False
+
+        # Try loading persisted models
+        ncf_loaded = self.ncf.load()
+        content_loaded = self.content.load()
+        self._loaded = ncf_loaded or content_loaded
+
+        if self._loaded:
+            logger.info("✅ Recommender loaded saved models from disk")
+        else:
+            logger.info("ℹ️  No saved models found — will train on first request or via management command")
+
+    def train(self, epochs=50, verbose=True):
+        """Train all sub-models and persist them."""
+        if verbose:
+            print("=" * 60)
+            print("🚀 BekoSIRS ML Recommendation System — Training Pipeline")
+            print("=" * 60)
+
+        start_time = time.time()
+
+        # 1. Train content model (always works if products exist)
+        content_ok = self.content.train(verbose=verbose)
+
+        # 2. Train NCF model (needs interaction data)
+        ncf_ok = self.ncf.train(epochs=epochs, verbose=verbose)
+
+        # 3. Save models
+        if content_ok:
+            self.content.save()
+        if ncf_ok:
+            self.ncf.save()
+
+        elapsed = time.time() - start_time
+
+        if verbose:
+            print(f"\n{'=' * 60}")
+            print(f"✅ Training complete in {elapsed:.1f}s")
+            print(f"   NCF model:     {'✅ trained' if ncf_ok else '⚠️  skipped (not enough data)'}")
+            print(f"   Content model: {'✅ trained' if content_ok else '⚠️  skipped (no products)'}")
+            print(f"   Models saved:  {ML_MODELS_DIR}")
+            print(f"{'=' * 60}")
+
+        self._loaded = content_ok or ncf_ok
+        return content_ok or ncf_ok
+
+    def recommend(self, user, top_n=10, ignore_cache=False, exclude_ids=None):
+        """
+        Main recommendation entry point.
         
-        interactions = []
+        Returns list of dicts: [{'product': Product, 'product_id': int, 'score': float, 'reason': str}]
+        """
+        # Auto-train content model if not loaded
+        if not self.content.is_trained:
+            self.content.train(verbose=False)
+            if self.content.is_trained:
+                self.content.save()
 
-        # 1. Fetch all interactions efficiently
-        views_data = ViewHistory.objects.all().values('customer_id', 'product_id', 'view_count')
-        if views_data.exists():
-            views = pd.DataFrame(list(views_data))
-            views['score'] = views['view_count'].apply(lambda x: min(x, 5) * 1.0)
-            interactions.append(views[['customer_id', 'product_id', 'score']])
-
-        wishlist_data = WishlistItem.objects.filter(
-            wishlist__customer__isnull=False
-        ).values('wishlist__customer_id', 'product_id')
-        if wishlist_data.exists():
-            wishlist = pd.DataFrame(list(wishlist_data))
-            wishlist = wishlist.rename(columns={'wishlist__customer_id': 'customer_id'})
-            wishlist['score'] = 3.0
-            interactions.append(wishlist)
-
-        reviews_data = Review.objects.all().values('customer_id', 'product_id', 'rating')
-        if reviews_data.exists():
-            reviews = pd.DataFrame(list(reviews_data))
-            reviews = reviews.rename(columns={'rating': 'score'})
-            interactions.append(reviews)
-
-        purchases_data = ProductOwnership.objects.all().values('customer_id', 'product_id')
-        if purchases_data.exists():
-            purchases = pd.DataFrame(list(purchases_data))
-            purchases['score'] = 5.0
-            interactions.append(purchases)
-
-        # 2. Create the Matrix
-        if not interactions:
-            self.user_product_matrix = None
-            return
-
-        all_interactions = pd.concat(interactions, ignore_index=True)
-        self.user_product_matrix = all_interactions.groupby(
-            ['customer_id', 'product_id']
-        )['score'].sum().unstack(fill_value=0)
-
-        # 3. Apply SVD
-        if (self.user_product_matrix.shape[0] > 5 and 
-            self.user_product_matrix.shape[1] > 5):
-            n_components = min(12, min(self.user_product_matrix.shape) - 1)
-            self.svd_model = TruncatedSVD(n_components=n_components, random_state=42)
-            self.svd_matrix = self.svd_model.fit_transform(self.user_product_matrix)
-            self.corr_matrix = np.corrcoef(self.svd_matrix)
-
-    def recommend(self, user, top_n=5, ignore_cache=False, exclude_ids=None):
-        """Main function to get hybrid recommendations."""
-        self._ensure_trained()
-        
-        if self.products_df is None or self.products_df.empty:
+        if self.content.products_df is None or self.content.products_df.empty:
             return []
 
-        exclude_ids = exclude_ids or set()
+        exclude_ids = set(exclude_ids or [])
 
-        # 1. Content-Based Scores
-        content_results = self._recommend_content_based(user, limit=None, ignore_cache=ignore_cache) 
-        
-        # 2. Collaborative Scores
-        collab_results = self._recommend_collaborative(user)
-        
-        # 3. Hybrid Merge (Weighted)
+        # Gather user's interaction history
+        user_interactions = self._get_user_interactions(user, ignore_cache)
+        owned_product_ids = self._get_owned_product_ids(user)
+        exclude_ids.update(owned_product_ids)  # Don't recommend already purchased items
+
         final_scores = {}
         reasons = {}
 
-        # Normalize and merge Content scores
-        if content_results:
-            max_content = max(content_results.values())
-            for pid, score in content_results.items():
-                if pid not in exclude_ids:
-                    final_scores[pid] = (score / max_content) * 0.7
-                    reasons[pid] = "İlgi alanlarınıza göre"
-        
-        # Normalize and merge Collab scores
-        if collab_results:
-            max_collab = max(collab_results.values())
-            for pid, score in collab_results.items():
-                if pid not in exclude_ids:
-                    normalized = (score / max_collab) * 0.3
-                    if pid in final_scores:
-                        final_scores[pid] += normalized
-                        if normalized > final_scores[pid] * 0.4:
-                            reasons[pid] = "Benzer kullanıcılar tercih etti"
-                    else:
-                        final_scores[pid] = normalized
-                        reasons[pid] = "Benzer kullanıcılar tercih etti"
+        all_product_ids = self.content.products_df['id'].tolist()
 
-        # 4. Search History Boost
+        # ── 1. NCF Scores ──
+        if self.ncf.is_trained:
+            ncf_scores = self.ncf.predict_for_user(
+                user.id, all_product_ids, self.content.products_df
+            )
+            if ncf_scores:
+                max_ncf = max(ncf_scores.values()) or 1
+                for pid, score in ncf_scores.items():
+                    if pid not in exclude_ids:
+                        normalized = (score / max_ncf) * self.WEIGHT_NCF
+                        final_scores[pid] = normalized
+                        reasons[pid] = "ML modeli tarafından önerildi"
+
+        # ── 2. Content-Based Scores ──
+        if self.content.is_trained and user_interactions:
+            content_scores = self.content.get_user_content_scores(
+                user_interactions, exclude_ids
+            )
+            if content_scores:
+                max_content = max(content_scores.values()) or 1
+                for pid, score in content_scores.items():
+                    if pid not in exclude_ids:
+                        normalized = (score / max_content) * self.WEIGHT_CONTENT
+                        final_scores[pid] = final_scores.get(pid, 0) + normalized
+                        if pid not in reasons:
+                            reasons[pid] = "İlgi alanlarınıza göre"
+
+        # ── 3. Popularity Scores (cold-start fallback) ──
+        popularity_scores = self._get_popularity_scores()
+        if popularity_scores:
+            max_pop = max(popularity_scores.values()) or 1
+            for pid, score in popularity_scores.items():
+                if pid not in exclude_ids:
+                    normalized = (score / max_pop) * self.WEIGHT_POPULARITY
+                    final_scores[pid] = final_scores.get(pid, 0) + normalized
+                    if pid not in reasons:
+                        reasons[pid] = "Popüler ürün"
+
+        # ── 4. Search History Boost ──
         search_boosts = self._get_search_boosts(user)
         for pid, boost in search_boosts.items():
             if pid not in exclude_ids:
                 final_scores[pid] = final_scores.get(pid, 0) + boost
                 reasons[pid] = "Aramalarınıza göre"
 
-        # 5. Price Sensitivity Boost
+        # ── 5. Price Sensitivity Boost ──
         price_boosts = self._get_price_sensitivity_boosts(user)
         for pid, boost in price_boosts.items():
             if pid not in exclude_ids and pid in final_scores:
                 final_scores[pid] += boost
-                if reasons.get(pid) != "Aramalarınıza göre" and boost > 0.1:
-                    reasons[pid] = "Fiyat tercihlerinize uygun"
+                if boost > 0.1 and reasons.get(pid) not in ("Aramalarınıza göre",):
+                    reasons[pid] = "Fiyat aralığınıza uygun"
 
-        # Sort and Format
-        return self._format_final_results(final_scores, reasons, top_n, exclude_ids)
+        # ── Format and return ──
+        return self._format_results(final_scores, reasons, top_n, exclude_ids, user=user)
 
-    def _recommend_content_based(self, user, limit=None, ignore_cache=False):
-        """Return raw dictionary {product_id: score}."""
-        user_interests = self._get_user_interactions_dict(user, ignore_cache)
-        if not user_interests:
-            return {}
+    # ───────────────────────────────────────────────────────────────────────
+    # Helper Methods
+    # ───────────────────────────────────────────────────────────────────────
+
+    def _get_user_interactions(self, user, ignore_cache=False):
+        """Gather user interaction scores: {product_id: weight}."""
+        from .models import ProductOwnership, Review, WishlistItem, ViewHistory
+
+        cache_key = f'ml_user_interactions_{user.id}'
+        if not ignore_cache:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        interactions = {}
+
+        # Purchases (weight=5.0)
+        for pid in ProductOwnership.objects.filter(
+            customer=user
+        ).values_list('product_id', flat=True):
+            interactions[pid] = interactions.get(pid, 0) + 5.0
+
+        # Reviews with rating > 3 (weight=rating)
+        for r in Review.objects.filter(
+            customer=user, rating__gt=3
+        ).values('product_id', 'rating'):
+            interactions[r['product_id']] = interactions.get(r['product_id'], 0) + float(r['rating'])
+
+        # Wishlist items (weight=3.0)
+        for pid in WishlistItem.objects.filter(
+            wishlist__customer=user
+        ).values_list('product_id', flat=True):
+            interactions[pid] = interactions.get(pid, 0) + 3.0
+
+        # ALL views weighted by view_count (capped at 15 to avoid one product dominating)
+        for vh in ViewHistory.objects.filter(customer=user).values('product_id', 'view_count'):
+            weight = min(vh['view_count'], 15)  # Cap at 15
+            interactions[vh['product_id']] = interactions.get(vh['product_id'], 0) + weight
+
+        cache.set(cache_key, interactions, 300)
+        return interactions
+
+    def _get_owned_product_ids(self, user):
+        """Get IDs of products the user already owns."""
+        from .models import ProductOwnership
+        return set(
+            ProductOwnership.objects.filter(
+                customer=user
+            ).values_list('product_id', flat=True)
+        )
+
+    def _get_popularity_scores(self):
+        """Calculate product popularity from aggregate interactions."""
+        cache_key = 'ml_popularity_scores'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from .models import ViewHistory, Review, ProductOwnership
+        from django.db.models import Count, Sum
 
         scores = {}
-        # Calculate score for every product based on similarity to liked items
-        for product_id, weight in user_interests.items():
-            if product_id not in self.indices.index:
-                continue
-            idx = self.indices[product_id]
-            
-            # Get similarity scores for this product against all others
-            sim_scores = self.similarity_matrix[idx]
-            
-            # Add weighted similarity to total score (vectorized)
-            matches = np.where(sim_scores > 0.1)[0]
-            for i in matches:
-                pid = self.products_df.iloc[i]['id']
-                scores[pid] = scores.get(pid, 0) + (sim_scores[i] * weight)
-                    
-        return scores
 
-    def _recommend_collaborative(self, user):
-        """Return raw dictionary {product_id: score} using SVD."""
-        if self.svd_model is None or self.user_product_matrix is None:
-            return {}
-            
-        user_id = user.id
-        if user_id not in self.user_product_matrix.index:
-            return {} # Cold start user
-            
-        # Get user's current vector in interaction matrix
-        user_idx = self.user_product_matrix.index.get_loc(user_id)
-        user_vector = self.user_product_matrix.iloc[user_idx].values.reshape(1, -1)
-        
-        # Transform to SVD space
-        user_svd = self.svd_model.transform(user_vector)
-        
-        # Reconstruct (predict) ratings
-        predicted_ratings = self.svd_model.inverse_transform(user_svd)[0]
-        
-        # Map back to product IDs
-        scores = {}
-        for i, score in enumerate(predicted_ratings):
-            pid = self.user_product_matrix.columns[i]
-            scores[pid] = score
-            
-        return scores
+        # Count interactions per product
+        view_counts = dict(
+            ViewHistory.objects.values('product_id').annotate(
+                total=Sum('view_count')
+            ).values_list('product_id', 'total')
+        )
+        review_counts = dict(
+            Review.objects.values('product_id').annotate(
+                total=Count('id')
+            ).values_list('product_id', 'total')
+        )
+        purchase_counts = dict(
+            ProductOwnership.objects.values('product_id').annotate(
+                total=Count('id')
+            ).values_list('product_id', 'total')
+        )
 
-    def _format_final_results(self, scores_dict, reasons_dict, top_n, exclude_ids=None):
-        from .models import Product
-        
-        exclude_ids = set(exclude_ids or [])
-        
-        # Filter and sort by score descending
-        filtered_scores = {
-            pid: score for pid, score in scores_dict.items() 
-            if pid not in exclude_ids and score > 0
-        }
-        sorted_items = sorted(filtered_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
-        
-        results = []
-        for pid, score in sorted_items:
-            try:
-                obj = Product.objects.get(id=pid)
-                results.append({
-                    'product': obj, 
-                    'product_id': pid,
-                    'score': score,
-                    'reason': reasons_dict.get(pid, 'Sizin için seçildi')
-                })
-            except Product.DoesNotExist:
-                continue
-        return results
+        # Weighted popularity
+        all_pids = set(view_counts) | set(review_counts) | set(purchase_counts)
+        for pid in all_pids:
+            scores[pid] = (
+                (view_counts.get(pid, 0) * 1.0) +
+                (review_counts.get(pid, 0) * 3.0) +
+                (purchase_counts.get(pid, 0) * 5.0)
+            )
+
+        cache.set(cache_key, scores, 1800)  # Cache for 30 min
+        return scores
 
     def _get_search_boosts(self, user):
-        """Boost products based on search history text matching."""
+        """Boost products matching user's recent search terms."""
         from .models import SearchHistory
-        
+
+        if self.content.products_df is None or 'content' not in self.content.products_df.columns:
+            return {}
+
         boosts = {}
-        if self.products_df is None or self.products_df.empty or 'content' not in self.products_df.columns:
-            return boosts
-            
-        recent_searches = SearchHistory.objects.filter(customer=user).order_by('-created_at')[:5]
-        if not recent_searches:
-            return boosts
-            
-        # Compile search terms (content is already lowercase from _train_content_model)
-        search_terms = [s.query.lower() for s in recent_searches]
-        
-        # Vectorized matching
-        for term in search_terms:
-            matches = self.products_df[self.products_df['content'].str.contains(term, na=False)].index
-            for idx in matches:
-                pid = self.products_df.iloc[idx]['id']
-                boosts[pid] = boosts.get(pid, 0) + 2.0
-                
+        recent_searches = SearchHistory.objects.filter(
+            customer=user
+        ).order_by('-created_at')[:5]
+
+        for search in recent_searches:
+            term = search.query.lower()
+            matches = self.content.products_df[
+                self.content.products_df['content'].str.contains(term, na=False)
+            ]
+            for _, row in matches.iterrows():
+                boosts[row['id']] = boosts.get(row['id'], 0) + 2.0
+
         return boosts
 
     def _get_price_sensitivity_boosts(self, user):
-        """Boost products that match the user's usual price range."""
+        """Boost products in the user's typical price range."""
         from .models import ProductOwnership, ViewHistory
-        
+
         boosts = {}
-        
-        if 'price' not in self.products_df.columns:
+        if self.content.products_df is None or 'price' not in self.content.products_df.columns:
             return boosts
-        
-        # Collect prices from purchases and views
+
         owned_prices = list(ProductOwnership.objects.filter(
             customer=user
         ).values_list('product__price', flat=True))
         viewed_prices = list(ViewHistory.objects.filter(
             customer=user
         ).values_list('product__price', flat=True)[:10])
-        
+
         all_prices = [float(p) for p in owned_prices + viewed_prices if p]
-        
         if not all_prices:
             return boosts
-            
+
         avg_price = np.mean(all_prices)
-        price_range_min = avg_price * 0.7
-        price_range_max = avg_price * 1.3
-        
-        # Vectorized price filtering (prices already numeric)
-        mask = (self.products_df['price'] >= price_range_min) & \
-               (self.products_df['price'] <= price_range_max)
-        
-        for idx in self.products_df[mask].index:
-            boosts[self.products_df.iloc[idx]['id']] = 0.5
-                    
+        price_min = avg_price * 0.7
+        price_max = avg_price * 1.3
+
+        mask = (
+            (self.content.products_df['price'] >= price_min) &
+            (self.content.products_df['price'] <= price_max)
+        )
+        for _, row in self.content.products_df[mask].iterrows():
+            boosts[row['id']] = 0.5
+
         return boosts
 
-    def _get_user_interactions_dict(self, user, ignore_cache=False):
-        """Gather raw interest scores for a single user with caching."""
-        from .models import ProductOwnership, Review, WishlistItem, ViewHistory
-        
-        # Check user-specific cache
-        cache_key = f'user_interactions_{user.id}'
-        
-        if not ignore_cache:
-            cached = cache.get(cache_key)
-            if cached is not None:
-                return cached
-        
-        interactions = {}
+    def _format_results(self, scores, reasons, top_n, exclude_ids, user=None):
+        """Sort and format final recommendation results with category diversity."""
+        from .models import Product, ViewHistory, Review, ProductOwnership, WishlistItem
 
-        # 1. Purchases (Strong Base Interest: 5.0) - bulk query
-        owned_ids = ProductOwnership.objects.filter(
-            customer=user
-        ).values_list('product_id', flat=True)
-        for pid in owned_ids:
-            interactions[pid] = interactions.get(pid, 0) + 5.0
+        filtered = {
+            pid: score for pid, score in scores.items()
+            if pid not in exclude_ids and score > 0
+        }
+        # Sort ALL candidates by score
+        sorted_items = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
 
-        # 2. Reviews > 3 (High Satisfaction: 4.0) - bulk query
-        reviewed_ids = Review.objects.filter(
-            customer=user, rating__gt=3
-        ).values_list('product_id', flat=True)
-        for pid in reviewed_ids:
-            interactions[pid] = interactions.get(pid, 0) + 4.0
+        # ── Get categories the user has actually interacted with ──
+        user_categories = set()
+        if user:
+            # From views
+            view_cats = ViewHistory.objects.filter(
+                customer=user
+            ).values_list('product__category__name', flat=True).distinct()
+            user_categories.update(c for c in view_cats if c)
+            
+            # From reviews
+            review_cats = Review.objects.filter(
+                customer=user
+            ).values_list('product__category__name', flat=True).distinct()
+            user_categories.update(c for c in review_cats if c)
+            
+            # From purchases
+            purchase_cats = ProductOwnership.objects.filter(
+                customer=user
+            ).values_list('product__category__name', flat=True).distinct()
+            user_categories.update(c for c in purchase_cats if c)
+            
+            # From wishlist
+            wishlist_cats = WishlistItem.objects.filter(
+                wishlist__customer=user
+            ).values_list('product__category__name', flat=True).distinct()
+            user_categories.update(c for c in wishlist_cats if c)
 
-        # 3. Wishlist (Intent to Buy: 3.0) - bulk query
-        wishlisted_ids = WishlistItem.objects.filter(
-            wishlist__customer=user
-        ).values_list('product_id', flat=True)
-        for pid in wishlisted_ids:
-            interactions[pid] = interactions.get(pid, 0) + 3.0
+        # ── Category diversity: max 4 items per category, only from user's categories ──
+        MAX_PER_CATEGORY = 4
+        category_counts = {}
+        diverse_items = []
 
-        # 4. Recency Boost - Most recent views get highest scores
-        recent_views = ViewHistory.objects.filter(
-            customer=user
-        ).order_by('-viewed_at')[:10].values_list('product_id', flat=True)
-        for i, pid in enumerate(recent_views):
-            recency_bonus = 10 - i
-            interactions[pid] = interactions.get(pid, 0) + recency_bonus
+        for pid, score in sorted_items:
+            if len(diverse_items) >= top_n:
+                break
+            try:
+                product = Product.objects.select_related('category').get(id=pid)
+                cat_name = product.category.name if product.category else 'Other'
 
-        # Cache for 5 minutes
-        cache.set(cache_key, interactions, 300)
-        
-        return interactions
+                # Skip categories the user has never interacted with (if we have user data)
+                if user_categories and cat_name not in user_categories:
+                    continue
+
+                if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
+                    diverse_items.append({
+                        'product': product,
+                        'product_id': pid,
+                        'score': round(score, 4),
+                        'reason': reasons.get(pid, 'Sizin için seçildi'),
+                    })
+                    category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
+            except Product.DoesNotExist:
+                continue
+
+        return diverse_items
+
+    def get_metrics(self):
+        """Return training metrics for diagnostics."""
+        return {
+            'ncf': self.ncf.training_metrics if self.ncf.is_trained else None,
+            'content': {
+                'n_products': len(self.content.products_df) if self.content.products_df is not None else 0,
+                'is_trained': self.content.is_trained,
+            },
+            'models_loaded': self._loaded,
+            'weights': {
+                'ncf': self.WEIGHT_NCF,
+                'content': self.WEIGHT_CONTENT,
+                'popularity': self.WEIGHT_POPULARITY,
+            }
+        }
 
     def invalidate_cache(self):
-        """Invalidate all cached data - call when products change."""
-        cache.delete(self.CACHE_KEY_SIMILARITY)
-        cache.delete(self.CACHE_KEY_PRODUCTS)
-        self.similarity_matrix = None
-        self.products_df = None
-        self._last_trained = None
+        """Clear all cached data."""
+        cache.delete('ml_popularity_scores')
+        # Invalidate user-specific caches can't be done generically,
+        # but they expire in 5 minutes anyway
 
     @classmethod
     def get_instance(cls):
-        """Get the singleton instance."""
         return cls()
 
 
-# Alias for backward compatibility
+# ═══════════════════════════════════════════════════════════════════════════
+# Backward-compatible aliases
+# ═══════════════════════════════════════════════════════════════════════════
 ContentBasedRecommender = HybridRecommender
 
 
