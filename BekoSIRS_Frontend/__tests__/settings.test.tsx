@@ -34,6 +34,8 @@ jest.mock('../storage/storage.native', () => ({
     getToken: jest.fn(),
     getRefreshToken: jest.fn(),
     clearTokens: jest.fn(),
+    clearAllTokens: jest.fn().mockResolvedValue(undefined),
+    deleteToken: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
