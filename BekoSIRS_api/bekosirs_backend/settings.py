@@ -97,23 +97,20 @@ WSGI_APPLICATION = 'bekosirs_backend.wsgi.application'
 # ------------------------------------------------------------
 # Use SQLite for development/testing if DB environment variables not set
 # Use MSSQL for production
-if os.getenv('DB_NAME'):
+# Database configuration - using PostgreSQL for Supabase with SQLite fallback for tests/local
+if os.getenv('DB_HOST'):
     DATABASES = {
         'default': {
-            'ENGINE': 'mssql',
-            'NAME': os.environ['DB_NAME'],
-            'USER': os.environ['DB_USER'],
-            'PASSWORD': os.environ['DB_PASSWORD'],
-            'HOST': os.environ['DB_HOST'],
-            'PORT': os.getenv('DB_PORT', '1433'),
-            'OPTIONS': {
-                'driver': 'ODBC Driver 18 for SQL Server',
-                'extra_params': 'Encrypt=yes;TrustServerCertificate=yes',
-            },
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'postgres'),
+            'USER': os.getenv('DB_USER', 'postgres'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
         }
     }
 else:
-    # SQLite fallback for local development/testing
+    # SQLite fallback for local development/testing or CI
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
