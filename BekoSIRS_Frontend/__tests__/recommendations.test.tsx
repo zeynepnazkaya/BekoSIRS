@@ -95,20 +95,20 @@ describe('RecommendationsScreen Tests', () => {
 
         await waitFor(() => {
             // Header
-            expect(getByText('Size Özel Öneriler')).toBeTruthy();
-            expect(getByText('Görüntüleme geçmişinize göre seçildi')).toBeTruthy();
+            expect(getByText('🤖 ML Önerileri')).toBeTruthy();
+            expect(getByText('Neural Collaborative Filtering ile oluşturuldu')).toBeTruthy();
 
             // First Recommendation
             expect(getByText('Akıllı TV 4K')).toBeTruthy();
             expect(getByText('Beko')).toBeTruthy();
             expect(getByText('Televizyon aramalarınıza göre')).toBeTruthy();
             expect(getByText(/25\.000,00/)).toBeTruthy();
-            expect(getByText('95%')).toBeTruthy();
+            expect(getByText('0.950')).toBeTruthy();
             expect(getByText('Stokta')).toBeTruthy();
 
             // Second Recommendation
             expect(getByText('Robot Süpürge')).toBeTruthy();
-            expect(getByText('65%')).toBeTruthy();
+            expect(getByText('0.650')).toBeTruthy();
             expect(getByText('Stok Yok')).toBeTruthy();
         });
     });
@@ -150,7 +150,7 @@ describe('RecommendationsScreen Tests', () => {
 
         await waitFor(() => {
             expect(getByText('Henüz Öneri Yok')).toBeTruthy();
-            expect(getByText('Ürünleri görüntüledikçe size özel öneriler burada görünecek')).toBeTruthy();
+            expect(getByText('Ürünleri görüntüledikçe ML modeli size özel öneriler oluşturacak')).toBeTruthy();
         });
     });
 });

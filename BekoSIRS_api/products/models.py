@@ -116,14 +116,14 @@ class Product(models.Model):
     category = models.ForeignKey(Category, related_name='products', on_delete=models.SET_NULL, null=True)
     description = models.TextField(blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    image = models.ImageField(upload_to='products/', blank=True, null=True)
+    image = models.ImageField(upload_to='products/', blank=True, null=True, max_length=500)
     
     # New fields from Excel Import
     model_code = models.CharField(max_length=100, unique=True, null=True, blank=True, verbose_name="Model Kodu")
     warranty_code = models.CharField(max_length=50, null=True, blank=True, verbose_name="Ek Garanti Kodu")
     price_list = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Liste Fiyatı")
     price_cash = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Peşin Fiyat")
-    campaign_tag = models.CharField(max_length=100, null=True, blank=True, verbose_name="Kampanya")
+    campaign_tag = models.TextField(null=True, blank=True, verbose_name="Kampanya")
     
     #status = models.CharField(max_length=20, default='in_stock')
     warranty_duration_months = models.PositiveIntegerField(default=24, help_text="Garanti süresi (ay olarak)")

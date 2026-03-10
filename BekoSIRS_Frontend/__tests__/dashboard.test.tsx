@@ -28,6 +28,9 @@ jest.mock('../services', () => ({
     productAPI: {
         getPopularProducts: jest.fn(),
     },
+    recommendationAPI: {
+        getRecommendations: jest.fn(),
+    },
 }));
 
 // Mock Storage Native Token
@@ -86,6 +89,11 @@ describe('HomeScreen (Dashboard) Tests', () => {
         (wishlistAPI.getWishlist as jest.Mock).mockResolvedValue({
             data: { items: [{ product: { id: 1 } }] }
         });
+        (api.get as any).recommendationAPI = {
+            getRecommendations: jest.fn().mockResolvedValue({ data: { recommendations: [] } })
+        };
+        const { recommendationAPI } = require('../services');
+        (recommendationAPI.getRecommendations as jest.Mock).mockResolvedValue({ data: { recommendations: [] } });
     });
 
     it('renders loading state initially', () => {
