@@ -58,4 +58,11 @@ export const customerService = {
         const response = await api.patch(`/customers/${id}/`, data);
         return response.data;
     },
+
+    /**
+     * Delete a customer completely
+     */
+    deleteCustomer: async (id: number): Promise<void> => {
+        await api.delete(`/customers/${id}/`);
+    },
 };

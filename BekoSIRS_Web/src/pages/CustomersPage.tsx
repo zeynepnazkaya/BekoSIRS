@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { UserCheck, Search, Eye, Edit2, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { UserCheck, Search, Eye, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import ViewCustomerModal from "../components/ViewCustomerModal";
 import EditCustomerModal from "../components/EditCustomerModal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { customerService } from "../services/customerService";
 import type { Customer, CustomerDetail } from "../types/customer";
 
@@ -14,6 +15,10 @@ export default function CustomersPage() {
     const [selectedCustomer, setSelectedCustomer] = useState<CustomerDetail | null>(null);
     const [showViewModal, setShowViewModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    
+    // Delete Confirmation State
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -80,6 +85,30 @@ export default function CustomersPage() {
 
     const handleEditSuccess = () => {
         fetchCustomers();
+    };
+
+    const handleDeleteClick = (customer: Customer) => {
+        setCustomerToDelete(customer);
+        setShowDeleteModal(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!customerToDelete) return;
+        try {
+            await customerService.deleteCustomer(customerToDelete.id);
+            setShowDeleteModal(false);
+            setCustomerToDelete(null);
+            
+            // Go back to previous page if it was the last item on current page
+            if (customers.length === 1 && currentPage > 1) {
+                setCurrentPage(prev => prev - 1);
+            } else {
+                fetchCustomers();
+            }
+        } catch (error) {
+            console.error("Error deleting customer:", error);
+            alert("Müşteri silinirken bir hata oluştu. Müşterinin ilişkili siparişleri/teslimatları olabilir.");
+        }
     };
 
     if (loading) {
@@ -235,6 +264,13 @@ export default function CustomersPage() {
                                                         >
                                                             <Edit2 size={18} className="text-gray-600 group-hover:text-green-600" />
                                                         </button>
+                                                        <button
+                                                            onClick={() => handleDeleteClick(customer)}
+                                                            className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+                                                            title="Sil"
+                                                        >
+                                                            <Trash2 size={18} className="text-gray-600 group-hover:text-red-600" />
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -304,6 +340,21 @@ export default function CustomersPage() {
                     setSelectedCustomer(null);
                 }}
                 onSuccess={handleEditSuccess}
+            />
+
+            {/* Delete Confirmation Modal */}
+            <ConfirmDialog
+                open={showDeleteModal}
+                onClose={() => {
+                    setShowDeleteModal(false);
+                    setCustomerToDelete(null);
+                }}
+                onConfirm={handleConfirmDelete}
+                title="Müşteriyi Sil"
+                message={`${customerToDelete?.full_name || customerToDelete?.username} isimli müşteriyi tamamen silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`}
+                confirmText="Evet, Sil"
+                cancelText="İptal"
+                variant="danger"
             />
         </div>
     );

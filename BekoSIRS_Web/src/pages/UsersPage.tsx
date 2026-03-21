@@ -13,8 +13,10 @@ import {
   CheckCircle,
   XCircle,
   Truck,
+  Trash2,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
+import ConfirmDialog from "../components/ConfirmDialog";
 import api from "../services/api";
 
 export default function UsersPage() {
@@ -30,6 +32,8 @@ export default function UsersPage() {
     password: "",
     role: "customer",
   });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
 
   const token = localStorage.getItem("access");
 
@@ -71,6 +75,24 @@ export default function UsersPage() {
       alert("✅ Kullanıcı başarıyla eklendi!");
     } catch (err: any) {
       setError(err.message || "Kullanıcı eklenemedi.");
+    }
+  };
+
+  const handleDeleteClick = (user: any) => {
+    setUserToDelete(user);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    try {
+      await api.delete(`/users/${userToDelete.id}/`);
+      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+      setShowDeleteModal(false);
+      setUserToDelete(null);
+    } catch (err: any) {
+      alert("Kullanıcı silinirken bir hata oluştu. İlişkili verileri olabilir.");
+      console.error(err);
     }
   };
 
@@ -254,6 +276,7 @@ export default function UsersPage() {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">E-posta</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rol</th>
                     <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Durum</th>
+                    <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksiyonlar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -293,11 +316,20 @@ export default function UsersPage() {
                             )}
                           </div>
                         </td>
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            onClick={() => handleDeleteClick(u)}
+                            className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+                            title="Sil"
+                          >
+                            <Trash2 size={18} className="text-gray-600 group-hover:text-red-600" />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={5} className="px-6 py-16 text-center">
+                      <td colSpan={6} className="px-6 py-16 text-center">
                         <Users size={48} className="mx-auto text-gray-300 mb-3" />
                         <p className="text-gray-600 font-medium">Kullanıcı bulunamadı</p>
                       </td>
@@ -366,6 +398,21 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmDialog
+        open={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setUserToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Kullanıcıyı Sil"
+        message={`${userToDelete?.username} kullanıcısını tamamen silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`}
+        confirmText="Evet, Sil"
+        cancelText="İptal"
+        variant="danger"
+      />
     </div>
   );
 }

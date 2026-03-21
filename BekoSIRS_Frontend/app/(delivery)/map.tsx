@@ -11,7 +11,7 @@ import {
     ScrollView,
     Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services';
@@ -28,6 +28,7 @@ interface Delivery {
 }
 
 export default function DeliveryMap() {
+    const insets = useSafeAreaInsets();
     const [deliveries, setDeliveries] = useState<Delivery[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -109,7 +110,7 @@ export default function DeliveryMap() {
             <StatusBar barStyle="dark-content" />
 
             {/* Header */}
-            <SafeAreaView style={styles.header} edges={['top']}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 12 }]}>
                 <TouchableOpacity
                     style={styles.backButton}
                     onPress={() => router.back()}
@@ -120,7 +121,7 @@ export default function DeliveryMap() {
                 <TouchableOpacity style={styles.mapButton} onPress={openAllInMaps}>
                     <Ionicons name="navigate" size={20} color="#005696" />
                 </TouchableOpacity>
-            </SafeAreaView>
+            </View>
 
             {/* Stats Summary */}
             <View style={styles.statsSummary}>
@@ -283,6 +284,7 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         padding: 16,
+        flexGrow: 1,
     },
     sectionTitle: {
         fontSize: 16,
@@ -291,7 +293,9 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     emptyState: {
+        flex: 1,
         alignItems: 'center',
+        justifyContent: 'center',
         paddingVertical: 48,
     },
     emptyText: {

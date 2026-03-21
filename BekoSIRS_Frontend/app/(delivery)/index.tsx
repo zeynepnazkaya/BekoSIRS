@@ -141,7 +141,7 @@ export default function DeliveryDashboard() {
                         </View>
                     </View>
                     <View style={styles.headerActions}>
-                        <TouchableOpacity style={styles.headerButton}>
+                        <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/(drawer)/notifications' as any)}>
                             <Ionicons name="notifications" size={24} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.headerButton} onPress={logout}>

@@ -120,7 +120,12 @@ export default function DeliveryProfileScreen() {
             {/* Menu Content */}
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
                 {menuItems.map((item, index) => (
-                    <TouchableOpacity key={index} style={styles.menuItem} activeOpacity={0.7}>
+                    <TouchableOpacity 
+                        key={index} 
+                        style={styles.menuItem} 
+                        activeOpacity={0.7}
+                        onPress={() => {}} // No action needed for placeholder
+                    >
                         <View style={styles.menuIconContainer}>
                             <Ionicons name={item.icon as any} size={24} color="#137fec" />
                         </View>
@@ -166,7 +171,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#137fec',
         borderBottomLeftRadius: 32,
         borderBottomRightRadius: 32,
-        paddingBottom: 32,
+        paddingBottom: 24,
     },
     headerTop: {
         flexDirection: 'row',
@@ -188,15 +193,15 @@ const styles = StyleSheet.create({
     },
     avatarSection: {
         alignItems: 'center',
-        paddingTop: 16,
+        paddingTop: 8,
     },
     avatarContainer: {
         position: 'relative',
     },
     avatar: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
+        width: 76,
+        height: 76,
+        borderRadius: 38,
         backgroundColor: 'rgba(255,255,255,0.2)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -216,9 +221,9 @@ const styles = StyleSheet.create({
     },
     userName: {
         color: '#fff',
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '700',
-        marginTop: 16,
+        marginTop: 12,
     },
     userTitle: {
         color: 'rgba(255,255,255,0.8)',

@@ -113,7 +113,7 @@ if all([_db_name, _db_user, _db_password, _db_host]):
                 'USER': _db_user,
                 'PASSWORD': _db_password,
                 'HOST': _db_host,
-                'PORT': _db_port or '5432',
+                'PORT': _db_port or '6543',
             }
         }
     else:

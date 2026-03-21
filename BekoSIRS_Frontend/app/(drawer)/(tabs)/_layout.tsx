@@ -47,15 +47,6 @@ export default function TabsLayout() {
                 }}
             />
 
-            {/* 2. Tab - Profil */}
-            <Tabs.Screen
-                name="profile"
-                options={{
-                    tabBarLabel: 'Hesabım',
-                    tabBarIcon: ({ color, size }) => <FontAwesome name="user" size={size} color={color} />,
-                }}
-            />
-
             {/* 3. Tab - Favoriler (Yıldız) */}
             <Tabs.Screen
                 name="wishlist"
@@ -71,6 +62,15 @@ export default function TabsLayout() {
                 options={{
                     tabBarLabel: 'Ürünlerim',
                     tabBarIcon: ({ color, size }) => <FontAwesome name="shopping-bag" size={size} color={color} />,
+                }}
+            />
+
+            {/* 5. Tab - Profil (Hesabım) */}
+            <Tabs.Screen
+                name="profile"
+                options={{
+                    tabBarLabel: 'Hesabım',
+                    tabBarIcon: ({ color, size }) => <FontAwesome name="user" size={size} color={color} />,
                 }}
             />
         </Tabs>

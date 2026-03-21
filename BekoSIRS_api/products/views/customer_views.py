@@ -537,7 +537,7 @@ class CustomerManagementViewSet(viewsets.ModelViewSet):
     
     permission_classes = [IsAuthenticated]
     pagination_class = CustomerPagination
-    http_method_names = ['get', 'patch', 'put', 'head', 'options']  # No DELETE or POST
+    http_method_names = ['get', 'patch', 'put', 'delete', 'head', 'options']  # Added DELETE
     
     def get_queryset(self):
         """
