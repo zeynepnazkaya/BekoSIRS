@@ -58,6 +58,7 @@ const NotificationsScreen = () => {
     notify_general: true,
   });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -174,30 +175,114 @@ const NotificationsScreen = () => {
     </View>
   );
 
+  const handleCardPress = (item: Notification) => {
+    // Toggle expanded
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) {
+        next.delete(item.id);
+      } else {
+        next.add(item.id);
+        // Mark as read when first opened
+        if (!item.is_read) {
+          handleMarkAsRead(item.id);
+        }
+      }
+      return next;
+    });
+  };
+
   const renderItem = ({ item }: { item: Notification }) => {
     const config = NotificationTypeConfig[item.notification_type] || NotificationTypeConfig.general;
+    const isExpanded = expandedIds.has(item.id);
 
     return (
       <TouchableOpacity
-        style={[styles.card, !item.is_read && styles.unreadCard]}
-        onPress={() => !item.is_read && handleMarkAsRead(item.id)}
-        activeOpacity={0.7}
+        style={[
+          styles.card,
+          !item.is_read && styles.unreadCard,
+          isExpanded && styles.expandedCard,
+        ]}
+        onPress={() => handleCardPress(item)}
+        activeOpacity={0.85}
       >
-        <View style={[styles.iconContainer, { backgroundColor: config.color }]}>
-          <FontAwesome name={config.icon as any} size={20} color="#fff" />
+        {/* Top row: icon + title + dot + chevron */}
+        <View style={styles.cardTop}>
+          <View style={[styles.iconContainer, { backgroundColor: config.color }]}>
+            <FontAwesome name={config.icon as any} size={20} color="#fff" />
+          </View>
+
+          <View style={styles.content}>
+            <View style={styles.headerRow}>
+              <Text
+                style={[styles.title, !item.is_read && styles.unreadTitle]}
+                numberOfLines={isExpanded ? undefined : 1}
+              >
+                {item.title}
+              </Text>
+              <View style={styles.headerRight}>
+                {!item.is_read && <View style={styles.unreadDot} />}
+                <FontAwesome
+                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={11}
+                  color="#aaa"
+                  style={styles.chevron}
+                />
+              </View>
+            </View>
+
+            {/* Preview line when collapsed */}
+            {!isExpanded && (
+              <Text style={styles.message} numberOfLines={2}>
+                {item.message}
+              </Text>
+            )}
+          </View>
         </View>
 
-        <View style={styles.content}>
-          <View style={styles.headerRow}>
-            <Text style={[styles.title, !item.is_read && styles.unreadTitle]} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {!item.is_read && <View style={styles.unreadDot} />}
+        {/* Expanded detail section */}
+        {isExpanded && (
+          <View style={styles.expandedBody}>
+            <Text style={styles.expandedMessage}>{item.message}</Text>
+
+            <View style={styles.expandedMeta}>
+              <View style={styles.metaRow}>
+                <FontAwesome name="clock-o" size={12} color="#999" />
+                <Text style={styles.metaText}>{formatDate(item.created_at)}</Text>
+              </View>
+              {item.product_name && (
+                <View style={styles.metaRow}>
+                  <FontAwesome name="cube" size={12} color="#999" />
+                  <Text style={styles.metaText}>{item.product_name}</Text>
+                </View>
+              )}
+              <View style={styles.metaRow}>
+                <FontAwesome name="tag" size={12} color="#999" />
+                <Text style={styles.metaText}>
+                  {item.notification_type === 'general' && 'Genel'}
+                  {item.notification_type === 'service_update' && 'Servis'}
+                  {item.notification_type === 'price_drop' && 'Fiyat Düşüşü'}
+                  {item.notification_type === 'restock' && 'Stok'}
+                  {item.notification_type === 'recommendation' && 'Öneri'}
+                </Text>
+              </View>
+            </View>
+
+            {!item.is_read && (
+              <TouchableOpacity
+                style={styles.markReadBtn}
+                onPress={() => handleMarkAsRead(item.id)}
+              >
+                <FontAwesome name="check" size={12} color="#fff" />
+                <Text style={styles.markReadText}>Okundu İşaretle</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          <Text style={styles.message} numberOfLines={2}>
-            {item.message}
-          </Text>
-          <View style={styles.footer}>
+        )}
+
+        {/* Collapsed footer */}
+        {!isExpanded && (
+          <View style={styles.collapsedFooter}>
             <Text style={styles.time}>{formatDate(item.created_at)}</Text>
             {item.product_name && (
               <Text style={styles.productName} numberOfLines={1}>
@@ -205,7 +290,7 @@ const NotificationsScreen = () => {
               </Text>
             )}
           </View>
-        </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -396,20 +481,28 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 10,
-    flexDirection: 'row',
     padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     elevation: 2,
   },
   unreadCard: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#EEF6FF',
     borderLeftWidth: 3,
     borderLeftColor: '#000000',
+  },
+  expandedCard: {
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   iconContainer: {
     width: 44,
@@ -418,6 +511,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    flexShrink: 0,
   },
   content: {
     flex: 1,
@@ -427,10 +521,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 6,
+    flexShrink: 0,
+  },
+  chevron: {
+    marginTop: 1,
+  },
   title: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#333',
+    color: '#222',
     flex: 1,
   },
   unreadTitle: {
@@ -441,7 +545,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#000000',
-    marginLeft: 8,
   },
   message: {
     fontSize: 13,
@@ -449,21 +552,65 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 18,
   },
-  footer: {
+  collapsedFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
+    paddingLeft: 56,
   },
   time: {
     fontSize: 11,
-    color: '#999',
+    color: '#aaa',
   },
   productName: {
     fontSize: 11,
     color: '#000000',
     fontWeight: '500',
     maxWidth: '50%',
+  },
+  // Expanded styles
+  expandedBody: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  expandedMessage: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 21,
+    marginBottom: 12,
+  },
+  expandedMeta: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
+    padding: 12,
+    gap: 8,
+    marginBottom: 12,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  markReadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#222',
+    borderRadius: 8,
+    paddingVertical: 9,
+    gap: 6,
+  },
+  markReadText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
   emptyContainer: {
     flex: 1,

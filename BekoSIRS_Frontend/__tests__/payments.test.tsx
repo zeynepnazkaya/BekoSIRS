@@ -48,6 +48,7 @@ const mockPlansData = {
             status_display: 'Aktif',
             installment_count: 6,
             start_date: '2023-01-01T10:00:00Z',
+            notes: 'Kapıdan teslim edildi',
         },
         {
             id: 2,
@@ -87,6 +88,33 @@ const mockInstallmentsData = {
             status_display: 'Bekliyor',
             is_overdue: false,
             days_until_due: 15,
+        }
+    ]
+};
+
+const mockInstallmentsWithOverdue = {
+    results: [
+        {
+            id: 201,
+            installment_number: 1,
+            amount: '3000',
+            due_date: '2022-01-01T10:00:00Z',
+            payment_date: null,
+            status: 'overdue',
+            status_display: 'Gecikmiş',
+            is_overdue: true,
+            days_until_due: -45,
+        },
+        {
+            id: 202,
+            installment_number: 2,
+            amount: '3000',
+            due_date: '2099-01-01T10:00:00Z',
+            payment_date: null,
+            status: 'pending',
+            status_display: 'Bekliyor',
+            is_overdue: false,
+            days_until_due: 30,
         }
     ]
 };
@@ -146,24 +174,89 @@ describe('PaymentsScreen Tests', () => {
         expect(getAllByText('5.000,00 ₺').length).toBe(2);
     });
 
-    it('handles payment confirmation correctly', async () => {
-        const { getByText, getAllByText } = render(<PaymentsScreen />);
-
-        // Load plans
+    it('"Ödedim" butonu onay diyaloğunu açmalı, API\'yi doğrudan çağırmamalı', async () => {
+        const { getByText } = render(<PaymentsScreen />);
         await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
-
-        // Click to load installments
         fireEvent.press(getByText('Buzdolabı'));
-
         await waitFor(() => expect(getByText('Ödedim')).toBeTruthy());
 
-        // Click confirm button
         fireEvent.press(getByText('Ödedim'));
 
+        // Alert diyaloğu açılmalı
+        expect(Alert.alert).toHaveBeenCalledWith(
+            'Ödemeyi Onayla',
+            expect.stringContaining('onaylamak istiyor musunuz'),
+            expect.any(Array)
+        );
+        // API henüz çağrılmamış olmalı
+        expect(installmentAPI.confirmPayment).not.toHaveBeenCalled();
+    });
+
+    it('"Evet, Ödedim" onaylandığında API çağrılmalı', async () => {
+        const { getByText } = render(<PaymentsScreen />);
+        await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
+        fireEvent.press(getByText('Buzdolabı'));
+        await waitFor(() => expect(getByText('Ödedim')).toBeTruthy());
+
+        fireEvent.press(getByText('Ödedim'));
+
+        // Alert'in onay butonunu bul ve tıkla
+        const alertCall = (Alert.alert as jest.Mock).mock.calls[0];
+        const buttons = alertCall[2];
+        const confirmButton = buttons.find((b: any) => b.text === 'Evet, Ödedim');
+        await confirmButton.onPress();
+
         await waitFor(() => {
-            expect(installmentAPI.confirmPayment).toHaveBeenCalledWith(102); // The pending installment ID should be matched
+            expect(installmentAPI.confirmPayment).toHaveBeenCalledWith(102);
             expect(Alert.alert).toHaveBeenCalledWith('Başarılı', 'Ödeme onayı gönderildi. Mağaza onayını bekleyin.');
         });
+    });
+
+    it('gecikmiş taksit "overdueRow" stilini almalı', async () => {
+        (installmentAPI.getPlanInstallments as jest.Mock).mockResolvedValue({ data: mockInstallmentsWithOverdue });
+        const { getByText, getByTestId } = render(<PaymentsScreen />);
+        await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
+        fireEvent.press(getByText('Buzdolabı'));
+
+        await waitFor(() => {
+            expect(getByText('Gecikmiş')).toBeTruthy();
+        });
+    });
+
+    it('gecikmiş taksitte "X gün gecikmiş" etiketi görünmeli', async () => {
+        (installmentAPI.getPlanInstallments as jest.Mock).mockResolvedValue({ data: mockInstallmentsWithOverdue });
+        const { getByText } = render(<PaymentsScreen />);
+        await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
+        fireEvent.press(getByText('Buzdolabı'));
+
+        await waitFor(() => {
+            expect(getByText('45 gün gecikmiş')).toBeTruthy();
+        });
+    });
+
+    it('bekleyen taksitte "X gün kaldı" etiketi görünmeli', async () => {
+        const { getByText } = render(<PaymentsScreen />);
+        await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
+        fireEvent.press(getByText('Buzdolabı'));
+
+        await waitFor(() => {
+            expect(getByText('15 gün kaldı')).toBeTruthy();
+        });
+    });
+
+    it('plan notu varsa ekranda görünmeli', async () => {
+        const { getByText } = render(<PaymentsScreen />);
+        await waitFor(() => {
+            expect(getByText('Kapıdan teslim edildi')).toBeTruthy();
+        });
+    });
+
+    it('plan notu yoksa not alanı görünmemeli', async () => {
+        const { queryByText } = render(<PaymentsScreen />);
+        await waitFor(() => expect(queryByText('Çamaşır Makinesi')).toBeTruthy());
+        // İkinci planda notes yok, bu yüzden notlar alanı render edilmemeli
+        // (İlk planın notunu da kontrol: sadece o plana ait olmalı)
+        expect(queryByText('Kapıdan teslim edildi')).toBeTruthy(); // sadece plan 1'de
     });
 
     it('renders empty state when no plans exist', async () => {

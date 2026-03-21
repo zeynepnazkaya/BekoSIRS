@@ -36,6 +36,7 @@ interface InstallmentPlan {
     status_display: string;
     installment_count: number;
     start_date: string;
+    notes?: string;
     installments?: Installment[];
 }
 
@@ -95,20 +96,32 @@ const PaymentsScreen = () => {
         }
     };
 
-    const handleConfirmPayment = async (installmentId: number, planId: number) => {
-        try {
-            await installmentAPI.confirmPayment(installmentId);
-            Alert.alert('Başarılı', 'Ödeme onayı gönderildi. Mağaza onayını bekleyin.');
-            // Refresh this plan's installments
-            const response = await installmentAPI.getPlanInstallments(planId);
-            const data = response.data;
-            setInstallmentsMap(prev => ({
-                ...prev,
-                [planId]: Array.isArray(data) ? data : (data.results || [])
-            }));
-        } catch (error: any) {
-            Alert.alert('Hata', error.response?.data?.error || 'Ödeme onaylanamadı');
-        }
+    const handleConfirmPayment = (installmentId: number, planId: number) => {
+        Alert.alert(
+            'Ödemeyi Onayla',
+            'Bu taksiti ödediğinizi onaylamak istiyor musunuz? Onayınız mağazaya iletilecektir.',
+            [
+                { text: 'Vazgeç', style: 'cancel' },
+                {
+                    text: 'Evet, Ödedim',
+                    style: 'default',
+                    onPress: async () => {
+                        try {
+                            await installmentAPI.confirmPayment(installmentId);
+                            Alert.alert('Başarılı', 'Ödeme onayı gönderildi. Mağaza onayını bekleyin.');
+                            const response = await installmentAPI.getPlanInstallments(planId);
+                            const data = response.data;
+                            setInstallmentsMap(prev => ({
+                                ...prev,
+                                [planId]: Array.isArray(data) ? data : (data.results || [])
+                            }));
+                        } catch (error: any) {
+                            Alert.alert('Hata', error.response?.data?.error || 'Ödeme onaylanamadı');
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const formatCurrency = (amount: string) => {
@@ -133,35 +146,58 @@ const PaymentsScreen = () => {
         }
     };
 
-    const renderInstallment = (inst: Installment, planId: number) => (
-        <View key={inst.id} style={[styles.installmentRow, inst.is_overdue && styles.overdueRow]}>
-            <View style={styles.installmentNumber}>
-                <Text style={styles.installmentNumberText}>{inst.installment_number}</Text>
-            </View>
+    const getDaysLabel = (inst: Installment): string => {
+        if (inst.status === 'paid' || inst.status === 'customer_confirmed') return '';
+        if (inst.is_overdue) return `${Math.abs(inst.days_until_due)} gün gecikmiş`;
+        if (inst.days_until_due === 0) return 'Bugün son gün';
+        return `${inst.days_until_due} gün kaldı`;
+    };
 
-            <View style={styles.installmentInfo}>
-                <Text style={styles.installmentAmount}>{formatCurrency(inst.amount)}</Text>
-                <Text style={styles.installmentDate}>Vade: {formatDate(inst.due_date)}</Text>
-            </View>
+    const renderInstallment = (inst: Installment, planId: number) => {
+        const daysLabel = getDaysLabel(inst);
+        return (
+            <View
+                key={inst.id}
+                style={[
+                    styles.installmentRow,
+                    inst.is_overdue && styles.overdueRow,
+                ]}
+            >
+                {inst.is_overdue && <View style={styles.overdueLeftBorder} />}
 
-            <View style={styles.installmentStatus}>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(inst.status) + '20' }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(inst.status) }]}>
-                        {inst.status_display}
-                    </Text>
+                <View style={[styles.installmentNumber, inst.is_overdue && styles.overdueNumber]}>
+                    <Text style={styles.installmentNumberText}>{inst.installment_number}</Text>
                 </View>
 
-                {inst.status === 'pending' && (
-                    <TouchableOpacity
-                        style={styles.confirmButton}
-                        onPress={() => handleConfirmPayment(inst.id, planId)}
-                    >
-                        <Text style={styles.confirmButtonText}>Ödedim</Text>
-                    </TouchableOpacity>
-                )}
+                <View style={styles.installmentInfo}>
+                    <Text style={styles.installmentAmount}>{formatCurrency(inst.amount)}</Text>
+                    <Text style={styles.installmentDate}>Vade: {formatDate(inst.due_date)}</Text>
+                    {daysLabel !== '' && (
+                        <Text style={[styles.daysLabel, inst.is_overdue && styles.daysLabelOverdue]}>
+                            {daysLabel}
+                        </Text>
+                    )}
+                </View>
+
+                <View style={styles.installmentStatus}>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(inst.status) + '20' }]}>
+                        <Text style={[styles.statusText, { color: getStatusColor(inst.status) }]}>
+                            {inst.status_display}
+                        </Text>
+                    </View>
+
+                    {(inst.status === 'pending' || inst.status === 'overdue') && (
+                        <TouchableOpacity
+                            style={[styles.confirmButton, inst.is_overdue && styles.confirmButtonOverdue]}
+                            onPress={() => handleConfirmPayment(inst.id, planId)}
+                        >
+                            <Text style={styles.confirmButtonText}>Ödedim</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
-        </View>
-    );
+        );
+    };
 
     const renderPlan = ({ item }: { item: InstallmentPlan }) => {
         const isExpanded = expandedPlanId === item.id;
@@ -218,6 +254,14 @@ const PaymentsScreen = () => {
                         <Text style={styles.progressText}>{item.progress_percentage}%</Text>
                     </View>
                 </View>
+
+                {/* Plan Notu */}
+                {item.notes ? (
+                    <View style={styles.notesContainer}>
+                        <FontAwesome name="info-circle" size={12} color="#6B7280" />
+                        <Text style={styles.notesText}>{item.notes}</Text>
+                    </View>
+                ) : null}
 
                 {/* Installments List (Expanded) */}
                 {isExpanded && (
@@ -408,6 +452,46 @@ const styles = StyleSheet.create({
     },
     overdueRow: {
         backgroundColor: '#FEF2F2',
+    },
+    overdueLeftBorder: {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 4,
+        backgroundColor: '#EF4444',
+        borderRadius: 2,
+    },
+    overdueNumber: {
+        backgroundColor: '#EF4444',
+    },
+    daysLabel: {
+        fontSize: 10,
+        color: '#F59E0B',
+        marginTop: 2,
+        fontWeight: '600',
+    },
+    daysLabelOverdue: {
+        color: '#EF4444',
+    },
+    confirmButtonOverdue: {
+        backgroundColor: '#EF4444',
+    },
+    notesContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        gap: 6,
+        backgroundColor: '#FFFBEB',
+        borderTopWidth: 1,
+        borderTopColor: '#FDE68A',
+    },
+    notesText: {
+        fontSize: 12,
+        color: '#92400E',
+        flex: 1,
+        lineHeight: 18,
     },
     installmentNumber: {
         width: 28,
