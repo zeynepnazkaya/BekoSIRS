@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.db.models import Q, Count
 import math
-from ..models import Delivery, DeliveryRoute, DeliveryRouteStop, ProductAssignment, CustomUser, DepotLocation
+from ..models import Delivery, DeliveryRoute, DeliveryRouteStop, ProductAssignment, ProductOwnership, CustomUser, DepotLocation, Notification
 from ..serializers import (
     DeliverySerializer, 
     DeliveryRouteSerializer, 
@@ -67,6 +67,32 @@ class ProductAssignmentViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['customer__username', 'customer__first_name', 'customer__last_name', 'product__name', 'product__model_code']
     ordering_fields = ['assigned_at', 'status']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        # Customers only see their own assignments
+        if hasattr(user, 'role') and user.role == 'customer':
+            qs = qs.filter(customer=user)
+        # Filter by customer id for admin/seller usage (e.g. ?customer=5)
+        customer_id = self.request.query_params.get('customer')
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
+        return qs
+
+    def perform_create(self, serializer):
+        assignment = serializer.save()
+        # Notify customer that a product has been assigned to them
+        Notification.objects.create(
+            user=assignment.customer,
+            notification_type='general',
+            title='Yeni Ürün Ataması',
+            message=(
+                f"{assignment.product.name} ürünü size atandı. "
+                f"Teslimat planlandığında bildirim alacaksınız."
+            ),
+            related_product=assignment.product,
+        )
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
@@ -492,11 +518,38 @@ class DeliveryPersonViewSet(viewsets.GenericViewSet):
             if delivery.assignment:
                 delivery.assignment.status = 'DELIVERED'
                 delivery.assignment.save()
+                # Müşteri için ProductOwnership oluştur (yoksa)
+                ProductOwnership.objects.get_or_create(
+                    customer=delivery.assignment.customer,
+                    product=delivery.assignment.product,
+                    defaults={'purchase_date': timezone.now().date()}
+                )
+                # Müşteriyi teslim edildi olarak bilgilendir
+                Notification.objects.create(
+                    user=delivery.assignment.customer,
+                    notification_type='general',
+                    title='Ürününüz Teslim Edildi',
+                    message=(
+                        f"{delivery.assignment.product.name} ürününüz başarıyla teslim edildi. "
+                        f"Artık ürününüzü 'Ürünlerim' bölümünden görebilirsiniz."
+                    ),
+                    related_product=delivery.assignment.product,
+                )
         elif new_status == 'OUT_FOR_DELIVERY':
             if delivery.assignment:
                 delivery.assignment.status = 'OUT_FOR_DELIVERY'
                 delivery.assignment.save()
-        
+                # Müşteriyi yolda olduğu konusunda bilgilendir
+                Notification.objects.create(
+                    user=delivery.assignment.customer,
+                    notification_type='general',
+                    title='Ürününüz Yolda',
+                    message=(
+                        f"{delivery.assignment.product.name} ürününüz bugün teslim edilmek üzere yola çıktı."
+                    ),
+                    related_product=delivery.assignment.product,
+                )
+
         delivery.save()
         
         # Rota durumu kontrolü - tüm teslimatlar tamamlandıysa rotayı da kapat

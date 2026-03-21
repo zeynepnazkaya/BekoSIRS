@@ -107,8 +107,13 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
         ).prefetch_related('queue_entry')
 
     def perform_create(self, serializer):
-        ownership = serializer.validated_data['product_ownership']
-        if ownership.customer != self.request.user:
+        # Validate ownership: either product_ownership or product_assignment must belong to this customer
+        ownership = serializer.validated_data.get('product_ownership')
+        assignment = serializer.validated_data.get('product_assignment')
+
+        if ownership and ownership.customer != self.request.user:
+            raise exceptions.PermissionDenied("Bu ürün için servis talebi oluşturamazsınız.")
+        if assignment and assignment.customer != self.request.user:
             raise exceptions.PermissionDenied("Bu ürün için servis talebi oluşturamazsınız.")
 
         service_request = serializer.save(customer=self.request.user)
