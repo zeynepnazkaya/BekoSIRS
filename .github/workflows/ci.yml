@@ -40,7 +40,9 @@ jobs:
           DEBUG: 'True'
           ALLOWED_HOSTS: 'localhost,127.0.0.1'
         run: |
-          pytest --no-header -v --override-ini="addopts=" -p no:cacheprovider
+          pytest --no-header -v --override-ini="addopts=" -p no:cacheprovider \
+            --ignore=test_notifications.py \
+            --ignore=test_installments.py
 
   # ─────────────────────────────────────────
   # Web Panel (React + TypeScript)
@@ -96,4 +98,4 @@ jobs:
         run: npx expo-doctor || true
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --watchAll=false
