@@ -1,34 +1,53 @@
+from unittest.mock import patch, MagicMock
+import base64
 from django.urls import reverse
 from rest_framework import status
 from .conftest import APITestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 class BiometricAPITest(APITestCase):
-    """Tests for biometric API endpoints."""
+    """Tests for true biometric/Face ID API endpoints."""
 
     def setUp(self):
         super().setUp()
         self.enable_url = reverse('biometric_enable')
         self.disable_url = reverse('biometric_disable')
         self.status_url = reverse('biometric_status')
-        self.verify_url = reverse('biometric_verify_device')
+        self.login_url = reverse('biometric_login')
+        
+        # Create a tiny 1x1 PNG image to pass DRF's ImageField validation
+        tiny_png_b64 = b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        tiny_png_bytes = base64.b64decode(tiny_png_b64)
+        
+        self.test_image = SimpleUploadedFile(
+            "test_face.png",
+            tiny_png_bytes,
+            content_type="image/png"
+        )
+        
+        # Test encoding
+        self.test_encoding = [0.1] * 128
 
     def test_enable_biometric_requires_auth(self):
         """Enable endpoint should require authentication."""
-        response = self.client.post(self.enable_url, {
-            'device_id': 'test-device-123',
-            'refresh_token': 'test-token'
-        })
+        response = self.client.post(self.enable_url, {'face_image': self.test_image})
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_enable_biometric_success(self):
-        """Authenticated user can enable biometric."""
+    @patch('products.views.biometric_views.cv2.imdecode')
+    @patch('deepface.DeepFace.represent')
+    def test_enable_biometric_success(self, mock_represent, mock_imdecode):
+        """Authenticated user can enable biometric with a face image."""
         self.authenticate_customer()
+        self.test_image.seek(0)
         
-        response = self.client.post(self.enable_url, {
-            'device_id': 'ios_test_device_123',
-            'refresh_token': 'test-refresh-token'
-        })
+        # Mock DeepFace.represent to return a dummy encoding
+        mock_represent.return_value = [{"embedding": self.test_encoding}]
         
+        mock_imdecode.return_value = 'dummy_image_array'
+        
+        response = self.client.post(self.enable_url, {'face_image': self.test_image}, format='multipart')
+        
+        print("Enable Response:", response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
         self.assertTrue(response.data['biometric_enabled'])
@@ -36,7 +55,7 @@ class BiometricAPITest(APITestCase):
         # Verify in database
         self.customer_user.refresh_from_db()
         self.assertTrue(self.customer_user.biometric_enabled)
-        self.assertEqual(self.customer_user.biometric_device_id, 'ios_test_device_123')
+        self.assertEqual(self.customer_user.face_encoding, self.test_encoding)
 
     def test_disable_biometric_success(self):
         """Authenticated user can disable biometric."""
@@ -44,7 +63,7 @@ class BiometricAPITest(APITestCase):
         
         # First enable
         self.customer_user.biometric_enabled = True
-        self.customer_user.biometric_device_id = 'test-device'
+        self.customer_user.face_encoding = self.test_encoding
         self.customer_user.save()
         
         response = self.client.post(self.disable_url)
@@ -56,7 +75,7 @@ class BiometricAPITest(APITestCase):
         # Verify in database
         self.customer_user.refresh_from_db()
         self.assertFalse(self.customer_user.biometric_enabled)
-        self.assertIsNone(self.customer_user.biometric_device_id)
+        self.assertIsNone(self.customer_user.face_encoding)
 
     def test_get_biometric_status(self):
         """Can get biometric status for authenticated user."""
@@ -66,56 +85,41 @@ class BiometricAPITest(APITestCase):
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('biometric_enabled', response.data)
-        self.assertIn('has_device', response.data)
+        self.assertIn('has_encoding', response.data)
 
-    def test_verify_device_valid(self):
-        """Valid device should be verified."""
+    @patch('products.views.biometric_views.cv2.imdecode')
+    @patch('deepface.modules.verification.find_threshold')
+    @patch('deepface.modules.verification.find_distance')
+    @patch('deepface.DeepFace.represent')
+    def test_biometric_login_success(self, mock_represent, mock_find_distance, mock_find_threshold, mock_imdecode):
+        """Valid face login should return tokens."""
+        self.test_image.seek(0)
         # Enable biometric for customer
         self.customer_user.biometric_enabled = True
-        self.customer_user.biometric_device_id = 'valid-device-id'
+        self.customer_user.face_encoding = self.test_encoding
         self.customer_user.save()
         
-        response = self.client.post(self.verify_url, {
-            'device_id': 'valid-device-id',
-            'user_id': self.customer_user.id
-        })
+        # Mock DeepFace.represent to return the same encoding
+        mock_represent.return_value = [{"embedding": self.test_encoding}]
         
+        # Mock distance and threshold so distance <= lenient_threshold
+        mock_find_distance.return_value = 0.1
+        mock_find_threshold.return_value = 0.4
+        mock_imdecode.return_value = 'dummy_image_array'
+        
+        response = self.client.post(self.login_url, {
+            'username': self.customer_user.username,
+            'face_image': self.test_image
+        }, format='multipart')
+        
+        print("Login Response:", response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
-        self.assertEqual(response.data['user_id'], self.customer_user.id)
+        self.assertIn('refresh', response.data['tokens'])
+        self.assertIn('access', response.data['tokens'])
+        self.assertIn('user_id', response.data)
 
-    def test_verify_device_invalid_device(self):
-        """Invalid device ID should fail verification."""
-        self.customer_user.biometric_enabled = True
-        self.customer_user.biometric_device_id = 'valid-device-id'
-        self.customer_user.save()
-        
-        response = self.client.post(self.verify_url, {
-            'device_id': 'wrong-device-id',
-            'user_id': self.customer_user.id
-        })
-        
+    def test_biometric_login_missing_params(self):
+        """Login without username or face_image should fail."""
+        response = self.client.post(self.login_url, {})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertFalse(response.data['success'])
-
-    def test_verify_device_biometric_disabled(self):
-        """Should fail if biometric not enabled for user."""
-        self.customer_user.biometric_enabled = False
-        self.customer_user.save()
-        
-        response = self.client.post(self.verify_url, {
-            'device_id': 'any-device',
-            'user_id': self.customer_user.id
-        })
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertFalse(response.data['success'])
-
-    def test_verify_device_nonexistent_user(self):
-        """Should fail for nonexistent user."""
-        response = self.client.post(self.verify_url, {
-            'device_id': 'any-device',
-            'user_id': 99999
-        })
-        
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
