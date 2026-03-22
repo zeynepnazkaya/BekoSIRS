@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     View,
     TextInput,
@@ -10,7 +10,8 @@ import {
     Platform,
     ScrollView,
     StatusBar,
-    Alert
+    Alert,
+    Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -18,38 +19,72 @@ import { useAuth } from '../hooks/useAuth';
 import { useBiometric } from '../hooks/useBiometric';
 import { saveTokens } from '../storage/storage.native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 const LoginScreen = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const { login, loading } = useAuth();
+    
+    // Camera state
+    const [showCamera, setShowCamera] = useState(false);
+    const [permission, requestPermission] = useCameraPermissions();
+    const cameraRef = useRef<any>(null);
 
-    const { isAvailable, authenticateWithBiometric } = useBiometric();
+    const { login, loading: authLoading } = useAuth();
+    const { loginWithFace, loading: bioLoading } = useBiometric();
 
     const handleLogin = async () => {
         await login(username, password);
     };
 
-    const handleBiometricLogin = async () => {
-        if (!isAvailable) {
-            Alert.alert("Bilgi", "Bu cihazda Face ID / biyometrik giriş kullanılamıyor veya ayarlanmamış.");
-            return;
+    const handleBiometricPress = async () => {
+        let currentUsername = username;
+        if (!currentUsername) {
+            const SecureStore = require('expo-secure-store');
+            const savedUsername = await SecureStore.getItemAsync('lastLoginUsername');
+            if (savedUsername) {
+                currentUsername = savedUsername;
+                setUsername(currentUsername); // State'i güncelle ki kamera modalı bilsin
+            } else {
+                Alert.alert("Bilgi", "Face ID kullanabilmek için lütfen uygulamanıza en az 1 kere şifrenizle giriş yapın.");
+                return;
+            }
         }
 
-        const result = await authenticateWithBiometric();
+        if (!permission?.granted) {
+            const result = await requestPermission();
+            if (!result.granted) {
+                Alert.alert("Hata", "Kamera izni gereklidir.");
+                return;
+            }
+        }
+        setShowCamera(true);
+    };
 
-        if (result.success && result.accessToken && result.refreshToken) {
-            await saveTokens(result.accessToken, result.refreshToken);
-            // Standart role anahtarını kullanıyoruz (camelCase)
-            await AsyncStorage.setItem('userRole', 'customer');
-            router.replace('/(drawer)' as any);
-        } else if (result.error !== 'cancelled') {
-            Alert.alert("Giriş Başarısız", result.error || "Biyometrik doğrulama başarısız oldu.");
+    const takePhotoAndLogin = async () => {
+        if (cameraRef.current) {
+            try {
+                const photo = await cameraRef.current.takePictureAsync({ base64: false });
+                setShowCamera(false);
+                
+                const result = await loginWithFace(username, photo.uri);
+
+                if (result.success && result.accessToken && result.refreshToken) {
+                    await saveTokens(result.accessToken, result.refreshToken);
+                    await AsyncStorage.setItem('userRole', 'customer');
+                    router.replace('/(drawer)' as any);
+                } else {
+                    Alert.alert("Giriş Başarısız", result.error || "Yüz doğrulama başarısız oldu.");
+                }
+            } catch (error) {
+                setShowCamera(false);
+                Alert.alert("Hata", "Fotoğraf çekilirken bir sorun oluştu.");
+            }
         }
     };
 
-    const isLoading = loading;
+    const isLoading = authLoading || bioLoading;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -64,7 +99,6 @@ const LoginScreen = () => {
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Header Section */}
                     <View style={styles.header}>
                         <View style={styles.logoBadge}>
                             <Text style={styles.logoText}>BEKO</Text>
@@ -75,19 +109,23 @@ const LoginScreen = () => {
                         </Text>
                     </View>
 
-                    {/* Login Card */}
                     <View style={styles.card}>
-                        {/* Always show FaceID button for Demo */}
                         <TouchableOpacity
                             style={styles.biometricButton}
-                            onPress={handleBiometricLogin}
+                            onPress={handleBiometricPress}
                             disabled={isLoading}
                             activeOpacity={0.8}
                         >
-                            <Text style={styles.biometricIcon}>👤</Text>
-                            <Text style={styles.biometricButtonText}>
-                                Face ID ile Giriş
-                            </Text>
+                            {bioLoading ? (
+                                <ActivityIndicator color="#2563EB" />
+                            ) : (
+                                <>
+                                    <Text style={styles.biometricIcon}>👤</Text>
+                                    <Text style={styles.biometricButtonText}>
+                                        Face ID ile Giriş
+                                    </Text>
+                                </>
+                            )}
                         </TouchableOpacity>
 
                         <View style={styles.divider}>
@@ -149,7 +187,7 @@ const LoginScreen = () => {
                             disabled={isLoading || !username || !password}
                             activeOpacity={0.8}
                         >
-                            {loading ? (
+                            {authLoading ? (
                                 <ActivityIndicator color="#FFFFFF" />
                             ) : (
                                 <Text style={styles.buttonText}>Giriş Yap</Text>
@@ -171,7 +209,6 @@ const LoginScreen = () => {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Footer Info */}
                     <View style={styles.footer}>
                         <Text style={styles.footerCopyright}>
                             © 2025 Beko Global. Tüm hakları saklıdır.
@@ -179,11 +216,100 @@ const LoginScreen = () => {
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* Camera Modal for Face ID */}
+            {showCamera && (
+                <Modal animationType="slide" transparent={false} visible={showCamera}>
+                    <View style={styles.cameraContainer}>
+                        <CameraView 
+                            style={styles.camera} 
+                            facing="front" 
+                            ref={cameraRef}
+                        >
+                            <View style={styles.cameraOverlay}>
+                                <View style={styles.faceOutline} />
+                                <Text style={styles.cameraText}>Lütfen yüzünüzü çerçeveye ortalayın</Text>
+                            </View>
+                            <View style={styles.cameraControls}>
+                                <TouchableOpacity 
+                                    style={styles.closeCameraButton} 
+                                    onPress={() => setShowCamera(false)}
+                                >
+                                    <Text style={styles.cameraButtonText}>İptal</Text>
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity 
+                                    style={styles.captureButton} 
+                                    onPress={takePhotoAndLogin}
+                                >
+                                    <View style={styles.captureButtonInner} />
+                                </TouchableOpacity>
+                                
+                                <View style={{ width: 60 }} />
+                            </View>
+                        </CameraView>
+                    </View>
+                </Modal>
+            )}
         </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
+    cameraContainer: { flex: 1, backgroundColor: 'black' },
+    camera: { flex: 1 },
+    cameraOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    faceOutline: {
+        width: 250,
+        height: 350,
+        borderWidth: 2,
+        borderColor: '#00FF00',
+        borderRadius: 150,
+        borderStyle: 'dashed',
+    },
+    cameraText: {
+        color: 'white',
+        fontSize: 16,
+        marginTop: 20,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        paddingHorizontal: 20,
+    },
+    cameraControls: {
+        height: 120,
+        backgroundColor: 'black',
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        paddingBottom: 20,
+    },
+    captureButton: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    captureButtonInner: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: 'white',
+    },
+    closeCameraButton: {
+        padding: 15,
+    },
+    cameraButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
     // ... Existing Styles ...
     container: {
         flex: 1,

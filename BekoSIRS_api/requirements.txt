@@ -45,6 +45,9 @@ psycopg2-binary==2.9.9
 pandas==2.2.2
 numpy==1.26.4
 scikit-learn==1.5.1
+opencv-python-headless==4.9.0.80
+deepface==0.0.86
+tf-keras==2.15.0
 
 # ==============================================================================
 # FILE PROCESSING

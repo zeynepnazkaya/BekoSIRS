@@ -66,14 +66,13 @@ class CustomUser(AbstractUser):
     # Bildirim Tercihleri (Taşındı -> UserNotificationPreference)
     # notify_* fields removed
 
-    # Biometric Authentication (Face ID / Face Unlock)
+    # Biometric Authentication (Face ID / Face Unlock via DeepFace)
     biometric_enabled = models.BooleanField(default=False, verbose_name="Biyometrik Giriş")
-    biometric_device_id = models.CharField(
-        max_length=255, 
+    face_encoding = models.JSONField(
         null=True, 
         blank=True, 
-        verbose_name="Biyometrik Cihaz ID",
-        help_text="Device identifier for biometric login"
+        verbose_name="Yüz Özellik Vektörü",
+        help_text="Mathematical representation of the user's face (extracted via DeepFace)"
     )
 
     # Adres Bilgileri (Taşındı -> CustomerAddress)

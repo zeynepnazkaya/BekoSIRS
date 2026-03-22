@@ -254,74 +254,75 @@ const RecommendationsScreen = () => {
     const barWidth = maxScore > 0 ? (item.score / maxScore) * 100 : 0;
 
     return (
-      <TouchableOpacity
-        style={[styles.card, item.clicked && styles.clickedCard]}
-        onPress={() => handleProductClick(item)}
-        activeOpacity={0.7}
-      >
-        {/* Rank + Score Header */}
-        <View style={styles.cardHeader}>
-          <View style={styles.rankContainer}>
-            <Text style={styles.rankText}>{getRankEmoji(index)}</Text>
-          </View>
-          <View style={styles.scoreContainer}>
-            <Text style={[styles.scoreLabel, { color: scoreColor }]}>{scoreLabel}</Text>
-            <Text style={[styles.scoreValue, { color: scoreColor }]}>
-              {item.score.toFixed(3)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Similarity Bar */}
-        <View style={styles.similarityBarBg}>
-          <View style={[styles.similarityBarFill, { width: `${barWidth}%`, backgroundColor: scoreColor }]} />
-        </View>
-
-        <View style={styles.cardContent}>
-          {product.image ? (
-            <Image source={{ uri: getImageUrl(product.image) || '' }} style={styles.image} />
-          ) : (
-            <View style={[styles.image, styles.imagePlaceholder]}>
-              <FontAwesome name="image" size={36} color="#ddd" />
+      <View style={[styles.card, item.clicked && styles.clickedCard]}>
+        <TouchableOpacity
+          onPress={() => handleProductClick(item)}
+          activeOpacity={0.7}
+        >
+          {/* Rank + Score Header */}
+          <View style={styles.cardHeader}>
+            <View style={styles.rankContainer}>
+              <Text style={styles.rankText}>{getRankEmoji(index)}</Text>
             </View>
-          )}
-
-          <View style={styles.info}>
-            <Text style={styles.productName} numberOfLines={2}>
-              {product.name}
-            </Text>
-            {product.brand ? (
-              <Text style={styles.brand}>{product.brand}</Text>
-            ) : null}
-            
-            {/* Reason chip */}
-            <View style={styles.reasonChip}>
-              <FontAwesome name="magic" size={10} color="#7B1FA2" />
-              <Text style={styles.reasonText}>{item.reason}</Text>
-            </View>
-
-            <View style={styles.priceRow}>
-              <Text style={styles.price}>
-                {parseFloat(product.price).toLocaleString('tr-TR', {
-                  style: 'currency',
-                  currency: 'TRY',
-                })}
+            <View style={styles.scoreContainer}>
+              <Text style={[styles.scoreLabel, { color: scoreColor }]}>{scoreLabel}</Text>
+              <Text style={[styles.scoreValue, { color: scoreColor }]}>
+                {item.score.toFixed(3)}
               </Text>
-              <View
-                style={[
-                  styles.stockBadge,
-                  { backgroundColor: isInStock ? '#4CAF50' : '#f44336' },
-                ]}
-              >
-                <Text style={styles.stockText}>
-                  {isInStock ? 'Stokta' : 'Stok Yok'}
+            </View>
+          </View>
+
+          {/* Similarity Bar */}
+          <View style={styles.similarityBarBg}>
+            <View style={[styles.similarityBarFill, { width: `${barWidth}%`, backgroundColor: scoreColor }]} />
+          </View>
+
+          <View style={styles.cardContent}>
+            {product.image ? (
+              <Image source={{ uri: getImageUrl(product.image) || '' }} style={styles.image} />
+            ) : (
+              <View style={[styles.image, styles.imagePlaceholder]}>
+                <FontAwesome name="image" size={36} color="#ddd" />
+              </View>
+            )}
+
+            <View style={styles.info}>
+              <Text style={styles.productName} numberOfLines={2}>
+                {product.name}
+              </Text>
+              {product.brand ? (
+                <Text style={styles.brand}>{product.brand}</Text>
+              ) : null}
+              
+              {/* Reason chip */}
+              <View style={styles.reasonChip}>
+                <FontAwesome name="magic" size={10} color="#7B1FA2" />
+                <Text style={styles.reasonText}>{item.reason}</Text>
+              </View>
+
+              <View style={styles.priceRow}>
+                <Text style={styles.price}>
+                  {parseFloat(product.price).toLocaleString('tr-TR', {
+                    style: 'currency',
+                    currency: 'TRY',
+                  })}
                 </Text>
+                <View
+                  style={[
+                    styles.stockBadge,
+                    { backgroundColor: isInStock ? '#4CAF50' : '#f44336' },
+                  ]}
+                >
+                  <Text style={styles.stockText}>
+                    {isInStock ? 'Stokta' : 'Stok Yok'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
-        {/* Wishlist action */}
+        {/* Wishlist action - Moved outside main TouchableOpacity */}
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.wishlistButton, inWishlist && styles.disabledButton]}
@@ -338,7 +339,7 @@ const RecommendationsScreen = () => {
             </Text>
           </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 

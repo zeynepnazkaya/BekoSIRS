@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  Modal
 } from 'react-native';
 import api from '../../services';
 import { useBiometric } from '../../hooks/useBiometric';
 import { getToken, getRefreshToken } from '../../storage/storage.native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 export default function SettingsScreen() {
   const [activeTab, setActiveTab] = useState<'password' | 'email' | 'security'>('security');
@@ -30,23 +32,26 @@ export default function SettingsScreen() {
   const [newEmail, setNewEmail] = useState('');
   const [passwordForEmail, setPasswordForEmail] = useState('');
 
+  // Camera state
+  const [showCamera, setShowCamera] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const cameraRef = useRef<any>(null);
+
   // Biometric hook
   const {
-    isAvailable: biometricAvailable,
-    isEnabled: biometricEnabled,
-    displayName: biometricName,
-    loading: biometricLoading,
     enableBiometric,
     disableBiometric,
-    checkIfEnabled,
+    loading: biometricLoading
   } = useBiometric();
+  
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
 
   // User info state
   const [userId, setUserId] = useState<number | null>(null);
 
   useEffect(() => {
     loadUserInfo();
-    checkIfEnabled();
+    checkBiometricStatus();
   }, []);
 
   const loadUserInfo = async () => {
@@ -58,36 +63,51 @@ export default function SettingsScreen() {
     }
   };
 
+  const checkBiometricStatus = async () => {
+      try {
+          const res = await api.get('/api/v1/biometric/status/');
+          setBiometricEnabled(res.data.biometric_enabled);
+      } catch (err) {
+          console.error("Biometric status fetch error:", err);
+      }
+  };
+
   const handleBiometricToggle = async (value: boolean) => {
     if (value) {
-      // Enable biometric
-      if (!userId) {
-        Alert.alert('Hata', 'Kullanıcı bilgisi yüklenemedi.');
-        return;
+      if (!permission?.granted) {
+          const result = await requestPermission();
+          if (!result.granted) {
+              Alert.alert("Hata", "Kamera izni gereklidir.");
+              return;
+          }
       }
-
-      // Get refresh token from secure storage
-      const token = await getToken();
-      if (!token) {
-        Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
-        return;
-      }
-
-      // Get refresh token from secure storage
-      const refreshToken = await getRefreshToken();
-      if (!refreshToken) {
-        Alert.alert(
-          'Yeniden Giriş Gerekli',
-          'Biyometrik girişi etkinleştirmek için çıkış yapıp tekrar giriş yapın (güvenlik için).'
-        );
-        return;
-      }
-
-      await enableBiometric(userId, refreshToken);
+      setShowCamera(true);
     } else {
       // Disable biometric
-      await disableBiometric();
+      const success = await disableBiometric();
+      if (success) {
+          setBiometricEnabled(false);
+      }
     }
+  };
+
+  const takePhotoAndEnable = async () => {
+      if (cameraRef.current) {
+          try {
+              const photo = await cameraRef.current.takePictureAsync({ base64: false });
+              setShowCamera(false);
+              
+              const refreshToken = await getRefreshToken();
+
+              const success = await enableBiometric(photo.uri, refreshToken || undefined);
+              if (success) {
+                  setBiometricEnabled(true);
+              }
+          } catch (error) {
+              setShowCamera(false);
+              Alert.alert("Hata", "Fotoğraf çekilirken bir sorun oluştu.");
+          }
+      }
   };
 
   const handlePasswordChange = async () => {
@@ -197,49 +217,38 @@ export default function SettingsScreen() {
           {activeTab === 'security' && (
             <>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Biyometrik Giriş</Text>
+                <Text style={styles.sectionTitle}>Biyometrik Giriş (Face ID)</Text>
                 <Text style={styles.sectionSubtitle}>
-                  {biometricAvailable
-                    ? `${biometricName} ile hızlı ve güvenli giriş yapın.`
-                    : 'Bu cihaz biyometrik kimlik doğrulamayı desteklemiyor.'}
+                  Yüz Tanıma ile hızlı ve güvenli sistem kullanımı sağlayın. Sadece biyometrik temsil (matematiksel vektör) sistemlerimize kaydedilir ve hiçbir fotoğraf veritabanımızda tutulmaz.
                 </Text>
               </View>
 
-              {biometricAvailable ? (
-                <View style={styles.settingRow}>
-                  <View style={styles.settingInfo}>
-                    <Text style={styles.settingLabel}>{biometricName}</Text>
-                    <Text style={styles.settingDescription}>
-                      {biometricEnabled
-                        ? 'Aktif - Giriş ekranında kullanabilirsiniz'
-                        : 'Devre dışı'}
-                    </Text>
-                  </View>
-                  {biometricLoading ? (
-                    <ActivityIndicator size="small" color="#000" />
-                  ) : (
-                    <Switch
-                      value={biometricEnabled}
-                      onValueChange={handleBiometricToggle}
-                      trackColor={{ false: '#E5E7EB', true: '#2563EB' }}
-                      thumbColor={biometricEnabled ? '#FFFFFF' : '#F4F4F5'}
-                    />
-                  )}
-                </View>
-              ) : (
-                <View style={styles.unavailableBox}>
-                  <Text style={styles.unavailableIcon}>🔒</Text>
-                  <Text style={styles.unavailableText}>
-                    Biyometrik kimlik doğrulama bu cihazda kullanılamıyor.
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Yüz Tanıma (Face ID)</Text>
+                  <Text style={styles.settingDescription}>
+                    {biometricEnabled
+                      ? 'Aktif - Giriş ekranında kullanabilirsiniz'
+                      : 'Devre dışı'}
                   </Text>
                 </View>
-              )}
+                {biometricLoading ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <Switch
+                    value={biometricEnabled}
+                    onValueChange={handleBiometricToggle}
+                    trackColor={{ false: '#E5E7EB', true: '#2563EB' }}
+                    thumbColor={biometricEnabled ? '#FFFFFF' : '#F4F4F5'}
+                  />
+                )}
+              </View>
 
               {biometricEnabled && (
                 <View style={styles.infoBox}>
                   <Text style={styles.infoIcon}>ℹ️</Text>
                   <Text style={styles.infoText}>
-                    {biometricName} etkin olduğunda, giriş ekranında şifre yerine {biometricName} ile giriş yapabilirsiniz.
+                    Yüz Tanıma etkinleştirildi. Giriş sayfasından kullanıcı adınız ile sistemlerimize giriş yapabilirsiniz.
                   </Text>
                 </View>
               )}
@@ -380,12 +389,103 @@ export default function SettingsScreen() {
             </>
           )}
         </View>
+
       </ScrollView>
+
+      {/* Camera Modal for Face ID Registration */}
+      {showCamera && (
+          <Modal animationType="slide" transparent={false} visible={showCamera}>
+              <View style={styles.cameraContainer}>
+                  <CameraView 
+                      style={styles.camera} 
+                      facing="front" 
+                      ref={cameraRef}
+                  >
+                      <View style={styles.cameraOverlay}>
+                          <View style={styles.faceOutline} />
+                          <Text style={styles.cameraText}>Lütfen yüzünüzü çerçeveye ortalayın ve kaydedin</Text>
+                      </View>
+                      <View style={styles.cameraControls}>
+                          <TouchableOpacity 
+                              style={styles.closeCameraButton} 
+                              onPress={() => setShowCamera(false)}
+                          >
+                              <Text style={styles.cameraButtonText}>İptal</Text>
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity 
+                              style={styles.captureButton} 
+                              onPress={takePhotoAndEnable}
+                          >
+                              <View style={styles.captureButtonInner} />
+                          </TouchableOpacity>
+                          
+                          <View style={{ width: 60 }} />
+                      </View>
+                  </CameraView>
+              </View>
+          </Modal>
+      )}
+
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  cameraContainer: { flex: 1, backgroundColor: 'black' },
+  camera: { flex: 1 },
+  cameraOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+  },
+  faceOutline: {
+      width: 250,
+      height: 350,
+      borderWidth: 2,
+      borderColor: '#00FF00',
+      borderRadius: 150,
+      borderStyle: 'dashed',
+  },
+  cameraText: {
+      color: 'white',
+      fontSize: 16,
+      marginTop: 20,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      paddingHorizontal: 20,
+  },
+  cameraControls: {
+      height: 120,
+      backgroundColor: 'black',
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      alignItems: 'center',
+      paddingBottom: 20,
+  },
+  captureButton: {
+      width: 70,
+      height: 70,
+      borderRadius: 35,
+      backgroundColor: 'rgba(255, 255, 255, 0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+  },
+  captureButtonInner: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: 'white',
+  },
+  closeCameraButton: {
+      padding: 15,
+  },
+  cameraButtonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: 'bold',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -447,7 +547,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 4,
   },
-  // Biometric settings styles
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',

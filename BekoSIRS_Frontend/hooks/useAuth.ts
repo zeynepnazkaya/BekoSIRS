@@ -64,6 +64,9 @@ export const useAuth = () => {
 
       // 3. Rol bilgisini AsyncStorage'a kaydet
       await AsyncStorage.setItem('userRole', userRole);
+      
+      const SecureStore = require('expo-secure-store');
+      await SecureStore.setItemAsync('lastLoginUsername', username);
 
       console.log('💾 Veriler kaydedildi. Yönlendiriliyor...');
 

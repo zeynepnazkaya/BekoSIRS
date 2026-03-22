@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { FontAwesome } from '@expo/vector-icons';
-import api, { wishlistAPI, productAPI } from '../../../services';
+import api, { wishlistAPI, productAPI, recommendationAPI } from '../../../services';
 import { ProductCard } from '../../../components/ProductCard';
 import { useRouter, Router } from 'expo-router';
 import { getToken } from '../../../storage/storage.native';
@@ -87,6 +87,7 @@ interface HomeListHeaderProps {
   sortBy: 'all' | 'reviews' | 'comments' | 'popular';
   setSortBy: (sort: 'all' | 'reviews' | 'comments' | 'popular') => void;
   clearFilters: () => void;
+  recommendedProducts: any[];
   router: Router;
   isSearching: boolean;
 }
@@ -101,6 +102,7 @@ const HomeListHeader = ({
   sortBy,
   setSortBy,
   clearFilters,
+  recommendedProducts,
   router,
   isSearching
 }: HomeListHeaderProps) => (
@@ -126,6 +128,31 @@ const HomeListHeader = ({
         </TouchableOpacity>
       )}
     </View>
+
+    {/* Suggested for You Section - ML driven */}
+    {recommendedProducts.length > 0 && !searchQuery && (
+      <View style={styles.popularSection}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Size Özel Öneriler</Text>
+          <TouchableOpacity onPress={() => router.push('/(drawer)/recommendations')}>
+            <Text style={styles.seeAll}>Tümünü Gör</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.popularScroll}
+        >
+          {recommendedProducts.map((rec, index) => (
+            <PopularProductCard 
+              key={rec.product.id || index} 
+              item={rec.product} 
+              router={router} 
+            />
+          ))}
+        </ScrollView>
+      </View>
+    )}
 
     {/* Popular Products Section - Hide when searching */}
     {popularProducts.length > 0 && !searchQuery && (
@@ -260,6 +287,7 @@ const HomeScreen = () => {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [popularProducts, setPopularProducts] = useState<Product[]>([]);
+  const [recommendedProducts, setRecommendedProducts] = useState<any[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -282,6 +310,7 @@ const HomeScreen = () => {
         api.get('/api/v1/products/?page_size=50'),
         api.get('/api/v1/categories/?page_size=1000'),
         productAPI.getPopularProducts(),
+        token ? recommendationAPI.getRecommendations() : Promise.resolve({ data: { recommendations: [] } }),
       ];
 
       if (token) {
@@ -303,6 +332,13 @@ const HomeScreen = () => {
       setFilteredProducts(productsData);
       setCategories(categoriesData);
       setPopularProducts(popularData.slice(0, 6));
+
+      if (requests.length > 3) {
+        const recommendationsRes = await requests[3];
+        const recData = recommendationsRes.data?.recommendations || recommendationsRes.data || [];
+        setRecommendedProducts(recData.slice(0, 6));
+      }
+
       isInitialLoadDone.current = true;
 
       console.log('✅ Initial data loaded:', productsData.length, 'products');
@@ -435,6 +471,7 @@ const HomeScreen = () => {
             sortBy={sortBy}
             setSortBy={setSortBy}
             clearFilters={clearFilters}
+            recommendedProducts={recommendedProducts}
             router={router}
             isSearching={isSearching}
           />

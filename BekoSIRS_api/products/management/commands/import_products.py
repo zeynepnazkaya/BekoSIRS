@@ -65,6 +65,7 @@ class Command(BaseCommand):
                 # Prices
                 price_cash = Decimal(str(price_raw))
                 price_list = Decimal(str(row[5])) if not pd.isna(row[5]) else None
+                
                 campaign = str(row[7]) if not pd.isna(row[7]) else None
                 
                 # Use current category or 'Uncategorized'

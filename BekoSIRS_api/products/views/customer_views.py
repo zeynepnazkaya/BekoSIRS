@@ -384,16 +384,17 @@ class RecommendationViewSet(viewsets.ModelViewSet):
     def list(self, request):
         """GET /api/recommendations/ - Get recommendations (with optional refresh)."""
         refresh = request.query_params.get('refresh', 'false').lower() == 'true'
+        user = request.user
         
         # Check if recommendations exist
-        has_recommendations = Recommendation.objects.filter(customer=request.user).exists()
+        has_recommendations = Recommendation.objects.filter(customer=user).exists()
         
         # Generate if forced refresh OR if no recommendations exist (Cold Start fix)
         if refresh or not has_recommendations:
-            self._generate_recommendations(request.user, ignore_cache=refresh)
+            self._generate_recommendations(user, ignore_cache=refresh)
 
         recommendations = Recommendation.objects.filter(
-            customer=request.user
+            customer=user
         ).select_related('product').order_by('-score')[:10]
 
         # Fetch ml metrics

@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { wishlistAPI, viewHistoryAPI, getImageUrl } from '../services/api';
+import { wishlistAPI, viewHistoryAPI, getImageUrl } from '../services';
 
 interface ProductCardProps {
   product: {
@@ -76,44 +76,21 @@ export const ProductCard = memo(({
   const isInStock = (product.stock ?? 0) > 0;
 
   return (
-    <TouchableOpacity onPress={handlePress} activeOpacity={0.8} style={style}>
-      <View style={compact ? styles.compactCard : styles.card}>
+    <View style={[compact ? styles.compactCard : styles.card, style]}>
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.8}>
         {imageSource && (
           <Image
             source={{ uri: imageSource }}
             style={compact ? styles.compactImage : styles.image}
             contentFit={compact ? 'contain' : 'cover'}
-            transition={200} // Smooth fade in
-            cachePolicy="memory-disk" // Cache images
+            transition={200}
+            cachePolicy="memory-disk"
           />
-        )}
-
-        {/* Wishlist Button */}
-        <TouchableOpacity
-          style={compact ? styles.compactWishlistButton : styles.wishlistButton}
-          onPress={handleWishlistToggle}
-          disabled={loading}
-        >
-          <FontAwesome
-            name={inWishlist ? "heart" : "heart-o"}
-            size={compact ? 18 : 22}
-            color={inWishlist ? "#f44336" : "#999"}
-          />
-        </TouchableOpacity>
-
-        {/* Stock Badge - Only in full mode */}
-        {!compact && product.stock !== undefined && (
-          <View style={[styles.stockBadge, { backgroundColor: isInStock ? '#4CAF50' : '#f44336' }]}>
-            <Text style={styles.stockText}>
-              {isInStock ? `Stokta` : 'Stok Yok'}
-            </Text>
-          </View>
         )}
 
         <View style={compact ? styles.compactInfoContainer : styles.infoContainer}>
           <Text style={compact ? styles.compactName : styles.name} numberOfLines={2}>{product.name}</Text>
 
-          {/* Rating - Compact mode only */}
           {compact && product.average_rating && (
             <View style={styles.ratingContainer}>
               <FontAwesome name="star" size={12} color="#FFA500" />
@@ -132,8 +109,30 @@ export const ProductCard = memo(({
             {parseFloat(product.price).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}
           </Text>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+
+      {/* Wishlist Button - Moved outside main TouchableOpacity */}
+      <TouchableOpacity
+        style={compact ? styles.compactWishlistButton : styles.wishlistButton}
+        onPress={handleWishlistToggle}
+        disabled={loading}
+      >
+        <FontAwesome
+          name={inWishlist ? "heart" : "heart-o"}
+          size={compact ? 18 : 22}
+          color={inWishlist ? "#f44336" : "#999"}
+        />
+      </TouchableOpacity>
+
+      {/* Stock Badge - Only in full mode */}
+      {!compact && product.stock !== undefined && (
+        <View style={[styles.stockBadge, { backgroundColor: isInStock ? '#4CAF50' : '#f44336' }]}>
+          <Text style={styles.stockText}>
+            {isInStock ? `Stokta` : 'Stok Yok'}
+          </Text>
+        </View>
+      )}
+    </View>
   );
 });
 

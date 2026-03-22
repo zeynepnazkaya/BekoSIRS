@@ -33,7 +33,7 @@ from products.views import (
     biometric_enable,
     biometric_disable,
     biometric_status,
-    biometric_verify_device,
+    biometric_login,
     # Delivery
     DeliveryViewSet,
     DeliveryRouteViewSet,
@@ -138,7 +138,7 @@ urlpatterns = [
     path('biometric/enable/', biometric_enable, name='biometric_enable'),
     path('biometric/disable/', biometric_disable, name='biometric_disable'),
     path('biometric/status/', biometric_status, name='biometric_status'),
-    path('biometric/verify-device/', biometric_verify_device, name='biometric_verify_device'),
+    path('biometric/login/', biometric_login, name='biometric_login'),
     
     # 🔹 EXCEL EXPORT
     path('products/export/excel/', export_products_excel, name='export_products_excel'),

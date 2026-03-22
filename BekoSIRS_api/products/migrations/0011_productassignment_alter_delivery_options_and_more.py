@@ -154,10 +154,16 @@ class Migration(migrations.Migration):
             name='duration_from_previous_min',
             field=models.IntegerField(blank=True, null=True, verbose_name='Önceki Noktadan Süre (dk)'),
         ),
-        migrations.AlterField(
-            model_name='deliveryroutestop',
-            name='estimated_arrival',
-            field=models.DateTimeField(blank=True, null=True, verbose_name='Tahmini Varış'),
+        migrations.RunSQL(
+            sql='ALTER TABLE products_deliveryroutestop ALTER COLUMN estimated_arrival TYPE timestamp with time zone USING CURRENT_DATE + estimated_arrival;',
+            reverse_sql='ALTER TABLE products_deliveryroutestop ALTER COLUMN estimated_arrival TYPE time without time zone USING estimated_arrival::time;',
+            state_operations=[
+                migrations.AlterField(
+                    model_name='deliveryroutestop',
+                    name='estimated_arrival',
+                    field=models.DateTimeField(blank=True, null=True, verbose_name='Tahmini Varış'),
+                ),
+            ]
         ),
         migrations.AlterField(
             model_name='deliveryroutestop',

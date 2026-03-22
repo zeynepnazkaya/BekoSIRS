@@ -53,7 +53,7 @@ from .biometric_views import (
     biometric_enable,
     biometric_disable,
     biometric_status,
-    biometric_verify_device,
+    biometric_login,
 )
 
 # Delivery and route optimization views
@@ -111,7 +111,7 @@ __all__ = [
     'biometric_enable',
     'biometric_disable',
     'biometric_status',
-    'biometric_verify_device',
+    'biometric_login',
     # Delivery
     'DeliveryViewSet',
     'DeliveryRouteViewSet',

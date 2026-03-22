@@ -5,7 +5,7 @@
  * işaretleme ve boş durum görünümünü doğrular.
  */
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import NotificationsScreen from '../app/(drawer)/notifications';
 import { notificationAPI } from '../services';
 import { Alert } from 'react-native';
@@ -103,9 +103,13 @@ describe('NotificationsScreen Tests', () => {
 
         await waitFor(() => expect(getByText('Fiyat Düştü!')).toBeTruthy());
 
-        fireEvent.press(getByText('Fiyat Düştü!'));
+        await act(async () => {
+            fireEvent.press(getByText('Fiyat Düştü!'));
+        });
 
-        expect(notificationAPI.markAsRead).toHaveBeenCalledWith(1);
+        await waitFor(() => {
+            expect(notificationAPI.markAsRead).toHaveBeenCalledWith(1);
+        });
     });
 
     it('opens settings and toggles a setting', async () => {

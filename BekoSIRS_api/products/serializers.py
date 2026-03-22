@@ -374,18 +374,18 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 
 # ---------------------------
-# Biometric Authentication Serializers
+# Biometric Authentication (Face ID via DeepFace)
 # ---------------------------
 class BiometricEnableSerializer(serializers.Serializer):
-    """Serializer for enabling biometric authentication."""
-    device_id = serializers.CharField(max_length=255)
-    refresh_token = serializers.CharField(write_only=True)
+    """Verilen yüz fotoğrafını alır ve backend'de temsil vektörü (embedding) çıkarır."""
+    face_image = serializers.ImageField(required=True)
+    refresh_token = serializers.CharField(write_only=True, required=False)
 
 
 class BiometricLoginSerializer(serializers.Serializer):
-    """Serializer for biometric login."""
-    device_id = serializers.CharField(max_length=255)
-    user_id = serializers.IntegerField()
+    """Mevcut kullanıcının yüzüyle giriş yapmasını sağlar."""
+    username = serializers.CharField(required=True)
+    face_image = serializers.ImageField(required=True)
 
 
 # ---------------------------

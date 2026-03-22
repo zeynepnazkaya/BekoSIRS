@@ -1001,25 +1001,25 @@ class HybridRecommender:
             view_cats = ViewHistory.objects.filter(
                 customer=user
             ).values_list('product__category__name', flat=True).distinct()
-            user_categories.update(c for c in view_cats if c)
+            user_categories.update(str(c).strip() for c in view_cats if c)
             
             # From reviews
             review_cats = Review.objects.filter(
                 customer=user
             ).values_list('product__category__name', flat=True).distinct()
-            user_categories.update(c for c in review_cats if c)
+            user_categories.update(str(c).strip() for c in review_cats if c)
             
             # From purchases
             purchase_cats = ProductOwnership.objects.filter(
                 customer=user
             ).values_list('product__category__name', flat=True).distinct()
-            user_categories.update(c for c in purchase_cats if c)
+            user_categories.update(str(c).strip() for c in purchase_cats if c)
             
             # From wishlist
             wishlist_cats = WishlistItem.objects.filter(
                 wishlist__customer=user
             ).values_list('product__category__name', flat=True).distinct()
-            user_categories.update(c for c in wishlist_cats if c)
+            user_categories.update(str(c).strip() for c in wishlist_cats if c)
 
         # ── Category diversity: max 4 items per category, only from user's categories ──
         MAX_PER_CATEGORY = 4
@@ -1032,8 +1032,10 @@ class HybridRecommender:
             if len(diverse_items) >= top_n:
                 break
             try:
-                product = Product.objects.select_related('category').get(id=pid)
-                cat_name = product.category.name if product.category else 'Other'
+                # Ensure pid is int for DB lookup
+                p_id = int(pid)
+                product = Product.objects.select_related('category').get(id=p_id)
+                cat_name = str(product.category.name).strip() if product.category else 'Other'
 
                 # Skip categories the user has never interacted with (if we have user data)
                 if user_categories and cat_name not in user_categories:
@@ -1042,13 +1044,13 @@ class HybridRecommender:
                 if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
                     diverse_items.append({
                         'product': product,
-                        'product_id': pid,
-                        'score': round(score, 4),
+                        'product_id': p_id,
+                        'score': round(float(score), 4),
                         'reason': reasons.get(pid, 'Sizin için seçildi'),
                     })
                     category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
-                    added_pids.add(pid)
-            except Product.DoesNotExist:
+                    added_pids.add(p_id)
+            except (Product.DoesNotExist, ValueError, TypeError):
                 continue
 
         # Pass 2: If we still don't have enough items, relax the category constraint
@@ -1056,26 +1058,40 @@ class HybridRecommender:
             for pid, score in sorted_items:
                 if len(diverse_items) >= top_n:
                     break
-                if pid in added_pids:
+                p_id = int(pid)
+                if p_id in added_pids:
                     continue
                     
                 try:
-                    product = Product.objects.select_related('category').get(id=pid)
-                    cat_name = product.category.name if product.category else 'Other'
+                    product = Product.objects.select_related('category').get(id=p_id)
+                    cat_name = str(product.category.name).strip() if product.category else 'Other'
 
-                    # We don't check user_categories here, but still respect MAX_PER_CATEGORY 
-                    # (or we could even relax that if we want, but usually it's good to keep diversity)
                     if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
                         diverse_items.append({
                             'product': product,
-                            'product_id': pid,
-                            'score': round(score, 4),
+                            'product_id': p_id,
+                            'score': round(float(score), 4),
                             'reason': reasons.get(pid, 'Sizin için seçildi (Yeni Kategori)'),
                         })
                         category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
-                        added_pids.add(pid)
-                except Product.DoesNotExist:
+                        added_pids.add(p_id)
+                except (Product.DoesNotExist, ValueError, TypeError):
                     continue
+
+        # ── Format and return ──
+        logger.info(f"📊 Recommending for user {user.id if user else 'Guest'}: {len(filtered)} candidates -> Filtered to {len(diverse_items)}")
+        
+        if not diverse_items and sorted_items:
+             logger.warning(f"⚠️  All {len(sorted_items)} candidates were filtered out for user {user.id if user else 'Guest'}")
+             # Check one for debug
+             pid, score = sorted_items[0]
+             try:
+                 p_id = int(pid)
+                 p = Product.objects.get(id=p_id)
+                 p_cat = str(p.category.name).strip() if p.category else 'Other'
+                 logger.info(f"   Debug candidate 0: ID={p_id}, Name={p.name}, Cat={p_cat}, UserCats={user_categories}")
+             except Exception as e: 
+                 logger.error(f"   Debug failed: {e}")
 
         return diverse_items
 
