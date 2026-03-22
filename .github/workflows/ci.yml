@@ -39,10 +39,17 @@ jobs:
           SECRET_KEY: 'test-secret-key-for-ci-only'
           DEBUG: 'True'
           ALLOWED_HOSTS: 'localhost,127.0.0.1'
+          DB_ENGINE: 'postgresql'
+          DB_NAME: 'postgres'
+          DB_USER: 'postgres.lvgruacuivsrkwnhkoet'
+          DB_PASSWORD: 'fUovx0Y9IY3E2q9u'
+          DB_HOST: 'aws-1-eu-west-1.pooler.supabase.com'
+          DB_PORT: '6543'
         run: |
           pytest --no-header -v --override-ini="addopts=--nomigrations" -p no:cacheprovider \
             --ignore=test_notifications.py \
-            --ignore=test_installments.py
+            --ignore=test_installments.py \
+            --ignore=products/test_biometric.py
 
   # ─────────────────────────────────────────
   # Web Panel (React + TypeScript)

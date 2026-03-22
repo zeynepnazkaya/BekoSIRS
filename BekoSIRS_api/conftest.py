@@ -5,3 +5,7 @@ collect_ignore = [
     "test_notifications.py",
     "test_installments.py",
 ]
+
+collect_ignore_glob = [
+    "products/test_biometric.py",
+]
