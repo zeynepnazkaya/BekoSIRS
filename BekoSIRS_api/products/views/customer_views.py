@@ -37,24 +37,18 @@ class WishlistViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='add-item')
     def add_item(self, request):
         """POST /api/wishlist/add-item/ - Add product to wishlist."""
-        print(f"DEBUG: add_item called by {request.user.username} (ID: {request.user.id})")
-        print(f"DEBUG: Payload: {request.data}")
-        
         wishlist, _ = Wishlist.objects.get_or_create(customer=request.user)
         product_id = request.data.get('product_id')
 
         if not product_id:
-            print("DEBUG: Missing product_id")
             return Response({'error': 'product_id gerekli'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             product = Product.objects.get(id=product_id)
         except Product.DoesNotExist:
-            print(f"DEBUG: Product {product_id} not found")
             return Response({'error': 'Ürün bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
 
         if WishlistItem.objects.filter(wishlist=wishlist, product=product).exists():
-            print("DEBUG: Already in wishlist")
             return Response({'error': 'Bu ürün zaten istek listenizde'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -65,10 +59,8 @@ class WishlistViewSet(viewsets.ModelViewSet):
                 notify_on_price_drop=request.data.get('notify_on_price_drop', True),
                 notify_on_restock=request.data.get('notify_on_restock', True)
             )
-            print(f"DEBUG: WishlistItem created: {item.id}")
             return Response(WishlistItemSerializer(item, context={'request': request}).data, status=status.HTTP_201_CREATED)
         except Exception as e:
-            print(f"DEBUG: Error creating WishlistItem: {e}")
             return Response({'error': f'Kayıt hatası: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['delete'], url_path='remove-item/(?P<product_id>[^/.]+)')
@@ -456,7 +448,7 @@ class RecommendationViewSet(viewsets.ModelViewSet):
                     reason=rec.get('reason', 'AI önerisi')
                 )
         except Exception as e:
-            print(f"Recommendation generation failed: {e}")
+            pass  # Recommendation generation failed silently
 
     @action(detail=False, methods=['post'], url_path='generate')
     def generate(self, request):

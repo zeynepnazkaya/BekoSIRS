@@ -44,7 +44,7 @@ def create_delivery_for_assignment(sender, instance, created, **kwargs):
                 lat = addr.latitude
                 lng = addr.longitude
         except Exception as e:
-            print(f"Warning: Could not fetch address for delivery: {e}")
+            pass  # Could not fetch address; use default
             
         # Create delivery
         Delivery.objects.create(
@@ -80,4 +80,4 @@ def create_ownership_on_delivery(sender, instance, **kwargs):
                 purchase_date=instance.delivered_at.date() if instance.delivered_at else timezone.now().date(),
                 serial_number=f"BEKO-{assignment.id}-{product.id}" # Auto-generate serial
             )
-            print(f"DEBUG: Auto-created ownership for {customer.username} - {product.name}")
+
