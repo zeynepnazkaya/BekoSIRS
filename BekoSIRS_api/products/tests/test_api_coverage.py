@@ -110,12 +110,10 @@ class TestWishlistAPI:
         assert r.status_code == status.HTTP_200_OK
 
     def test_add_item_to_wishlist(self, api_client, customer_user, product):
-        wishlist = Wishlist.objects.create(customer=customer_user)
+        Wishlist.objects.create(customer=customer_user)
         api_client.force_authenticate(user=customer_user)
-        r = api_client.post('/api/v1/wishlist-items/', {
-            'wishlist': wishlist.id,
-            'product': product.id,
-        })
+        # WishlistItem is managed via /api/v1/wishlist/add-item/ custom action
+        r = api_client.post('/api/v1/wishlist/add-item/', {'product_id': product.id})
         assert r.status_code == status.HTTP_201_CREATED
 
 
@@ -152,6 +150,7 @@ class TestServiceRequestAPI:
         r = api_client.post('/api/v1/service-requests/', {
             'description': 'Kapı açılmıyor.',
             'request_type': 'repair',
+            'product_ownership': ownership.id,
         })
         assert r.status_code == status.HTTP_201_CREATED
 
