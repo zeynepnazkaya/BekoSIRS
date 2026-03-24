@@ -85,10 +85,10 @@ describe('Dashboard', () => {
         });
     });
 
-    it('müşteri sayısını doğru gösterir', async () => {
+    it('düşük stok sayısını doğru gösterir', async () => {
         renderDashboard();
         await waitFor(() => {
-            expect(screen.getByText('150')).toBeInTheDocument();
+            expect(screen.getByText('3')).toBeInTheDocument();
         });
     });
 
