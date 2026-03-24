@@ -96,33 +96,6 @@ const PaymentsScreen = () => {
         }
     };
 
-    const handleConfirmPayment = (installmentId: number, planId: number) => {
-        Alert.alert(
-            'Ödemeyi Onayla',
-            'Bu taksiti ödediğinizi onaylamak istiyor musunuz? Onayınız mağazaya iletilecektir.',
-            [
-                { text: 'Vazgeç', style: 'cancel' },
-                {
-                    text: 'Evet, Ödedim',
-                    style: 'default',
-                    onPress: async () => {
-                        try {
-                            await installmentAPI.confirmPayment(installmentId);
-                            Alert.alert('Başarılı', 'Ödeme onayı gönderildi. Mağaza onayını bekleyin.');
-                            const response = await installmentAPI.getPlanInstallments(planId);
-                            const data = response.data;
-                            setInstallmentsMap(prev => ({
-                                ...prev,
-                                [planId]: Array.isArray(data) ? data : (data.results || [])
-                            }));
-                        } catch (error: any) {
-                            Alert.alert('Hata', error.response?.data?.error || 'Ödeme onaylanamadı');
-                        }
-                    },
-                },
-            ]
-        );
-    };
 
     const formatCurrency = (amount: string) => {
         return parseFloat(amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ₺';
@@ -186,14 +159,6 @@ const PaymentsScreen = () => {
                         </Text>
                     </View>
 
-                    {(inst.status === 'pending' || inst.status === 'overdue') && (
-                        <TouchableOpacity
-                            style={[styles.confirmButton, inst.is_overdue && styles.confirmButtonOverdue]}
-                            onPress={() => handleConfirmPayment(inst.id, planId)}
-                        >
-                            <Text style={styles.confirmButtonText}>Ödedim</Text>
-                        </TouchableOpacity>
-                    )}
                 </View>
             </View>
         );

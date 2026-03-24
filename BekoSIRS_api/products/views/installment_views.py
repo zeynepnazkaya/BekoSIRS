@@ -4,7 +4,8 @@ from products.models import InstallmentPlan, Installment, Notification
 from products.serializers import (
     InstallmentPlanSerializer, InstallmentPlanListSerializer,
     InstallmentPlanDetailSerializer, InstallmentPlanCreateSerializer,
-    InstallmentSerializer, AdminApprovePaymentSerializer
+    InstallmentSerializer, AdminApprovePaymentSerializer,
+    InstallmentEditSerializer
 )
 
 
@@ -138,6 +139,19 @@ class InstallmentViewSet(viewsets.ModelViewSet):
                 plan.save()
                 
             return response.Response({'status': 'success'})
+        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @decorators.action(detail=True, methods=['patch'], url_path='edit')
+    def edit(self, request, pk=None):
+        """PATCH /api/v1/installments/{id}/edit/ — Admin taksit düzenleme."""
+        if not request.user.is_staff:
+            return response.Response({'error': 'Yetkisiz işlem'}, status=status.HTTP_403_FORBIDDEN)
+
+        installment = self.get_object()
+        serializer = InstallmentEditSerializer(installment, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return response.Response(InstallmentSerializer(installment).data)
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @decorators.action(detail=True, methods=['post'], url_path='customer-confirm')

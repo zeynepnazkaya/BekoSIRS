@@ -889,6 +889,12 @@ class AdminApprovePaymentSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class InstallmentEditSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Installment
+        fields = ['due_date', 'amount', 'payment_date', 'status']
+
+
 # ---------------------------
 # 🔹 AUDIT LOG SERIALIZER
 # ---------------------------
