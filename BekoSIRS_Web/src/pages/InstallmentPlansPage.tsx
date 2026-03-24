@@ -488,6 +488,7 @@ export default function InstallmentPlansPage() {
                                 </span>
                                 {!editingNotes && selectedPlan.status !== 'cancelled' && (
                                     <button
+                                        data-testid="notes-edit-btn"
                                         onClick={() => { setEditingNotes(true); setNotesValue(selectedPlan.notes || ""); }}
                                         className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800"
                                     >
