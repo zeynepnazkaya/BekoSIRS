@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Image,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -15,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import api, { wishlistAPI, viewHistoryAPI, reviewAPI, productOwnershipAPI } from '../../services';
+import api, { wishlistAPI, viewHistoryAPI, reviewAPI, productOwnershipAPI, getImageUrl } from '../../services';
 
 interface Product {
   id: number;
@@ -29,6 +30,16 @@ interface Product {
   category_name?: string;
   features?: string;
   warranty_months?: number;
+}
+
+interface SimilarProduct {
+  id: number;
+  name: string;
+  brand: string;
+  price: string;
+  image?: string;
+  image_url?: string;
+  category_name?: string;
 }
 
 interface Review {
@@ -59,11 +70,14 @@ export default function ProductDetailScreen() {
   const [userComment, setUserComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [averageRating, setAverageRating] = useState(0);
+  const [similarProducts, setSimilarProducts] = useState<SimilarProduct[]>([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
       fetchProduct();
       fetchReviews();
+      fetchSimilarProducts();
       checkOwnership();
       recordView();
     }
@@ -100,6 +114,19 @@ export default function ProductDetailScreen() {
       setReviewsLoading(false);
     }
   }, [id]);
+
+  const fetchSimilarProducts = async () => {
+    setSimilarLoading(true);
+    try {
+      const response = await api.get(`/api/v1/products/${id}/similar/`);
+      const data = Array.isArray(response.data) ? response.data : response.data?.results || [];
+      setSimilarProducts(data.filter((p: SimilarProduct) => p.id !== Number(id)));
+    } catch (error) {
+      console.log('Similar products fetch error:', error);
+    } finally {
+      setSimilarLoading(false);
+    }
+  };
 
   const recordView = async () => {
     try {
@@ -383,6 +410,51 @@ export default function ProductDetailScreen() {
                   Henüz değerlendirme yok. İlk değerlendiren siz olun!
                 </Text>
               </View>
+            )}
+          </View>
+
+          {/* Similar Products Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Benzer Ürünler</Text>
+            {similarLoading ? (
+              <ActivityIndicator size="small" color="#000" />
+            ) : similarProducts.length > 0 ? (
+              <FlatList
+                data={similarProducts}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item) => item.id.toString()}
+                contentContainerStyle={{ gap: 12 }}
+                renderItem={({ item }) => {
+                  const imgSrc = item.image_url || (item.image ? getImageUrl(item.image) : null);
+                  return (
+                    <TouchableOpacity
+                      style={styles.similarCard}
+                      activeOpacity={0.7}
+                      onPress={() => router.push(`/product/${item.id}`)}
+                    >
+                      <View style={styles.similarImageContainer}>
+                        {imgSrc ? (
+                          <Image source={{ uri: imgSrc }} style={styles.similarImage} resizeMode="cover" />
+                        ) : (
+                          <View style={[styles.similarImage, styles.similarImagePlaceholder]}>
+                            <FontAwesome name="image" size={28} color="#D1D5DB" />
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.similarInfo}>
+                        <Text style={styles.similarName} numberOfLines={2}>{item.name}</Text>
+                        <Text style={styles.similarBrand} numberOfLines={1}>{item.brand}</Text>
+                        <Text style={styles.similarPrice}>
+                          {parseFloat(item.price).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            ) : (
+              <Text style={styles.noSimilarText}>Benzer ürün bulunamadı</Text>
             )}
           </View>
         </View>
@@ -813,5 +885,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  // Similar Products Styles
+  similarCard: {
+    width: 160,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  similarImageContainer: {
+    width: '100%',
+    height: 120,
+    backgroundColor: '#F3F4F6',
+  },
+  similarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  similarImagePlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  similarInfo: {
+    padding: 10,
+  },
+  similarName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  similarBrand: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginBottom: 6,
+  },
+  similarPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+  },
+  noSimilarText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 });

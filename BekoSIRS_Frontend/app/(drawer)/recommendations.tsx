@@ -93,13 +93,13 @@ const RecommendationsScreen = () => {
   }, []);
 
   useEffect(() => {
-    fetchRecommendations(true); // Always refresh on mount
+    fetchRecommendations(false); // Load cached recs (instant)
     fetchWishlistIds();
   }, [fetchRecommendations, fetchWishlistIds]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchRecommendations(true);
+    fetchRecommendations(true); // Trigger ML re-scoring on backend
     fetchWishlistIds();
   }, [fetchRecommendations, fetchWishlistIds]);
 
@@ -119,6 +119,16 @@ const RecommendationsScreen = () => {
 
   const handleProductClick = (item: Recommendation) => {
     router.push(`/product/${item.product.id}`);
+  };
+
+  const handleDismiss = async (item: Recommendation) => {
+    if (!item.id) return;
+    try {
+      await recommendationAPI.dismissRecommendation(item.id);
+      setRecommendations(prev => prev.filter(r => r.id !== item.id));
+    } catch (error) {
+      Alert.alert('Hata', 'İşlem başarısız');
+    }
   };
 
   // Score color with gradient feel
@@ -294,9 +304,9 @@ const RecommendationsScreen = () => {
                 <Text style={styles.brand}>{product.brand}</Text>
               ) : null}
               
-              {/* Reason chip */}
+              {/* Reason chip - why this product is recommended */}
               <View style={styles.reasonChip}>
-                <FontAwesome name="magic" size={10} color="#7B1FA2" />
+                <FontAwesome name="lightbulb-o" size={12} color="#7B1FA2" />
                 <Text style={styles.reasonText}>{item.reason}</Text>
               </View>
 
@@ -322,7 +332,7 @@ const RecommendationsScreen = () => {
           </View>
         </TouchableOpacity>
 
-        {/* Wishlist action - Moved outside main TouchableOpacity */}
+        {/* Action buttons */}
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.wishlistButton, inWishlist && styles.disabledButton]}
@@ -335,8 +345,16 @@ const RecommendationsScreen = () => {
               color={inWishlist ? "#9E9E9E" : "#f44336"}
             />
             <Text style={[styles.wishlistButtonText, inWishlist && { color: '#9E9E9E' }]}>
-              {inWishlist ? 'İstek Listesinde' : 'İstek Listesine Ekle'}
+              {inWishlist ? 'Listede' : 'İstek Listesi'}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.dismissButton}
+            onPress={() => handleDismiss(item)}
+          >
+            <FontAwesome name="ban" size={14} color="#9E9E9E" />
+            <Text style={styles.dismissButtonText}>İlgilenmiyorum</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -684,17 +702,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f3e5f5',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    alignSelf: 'flex-start',
-    marginBottom: 6,
-    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 8,
+    gap: 6,
   },
   reasonText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#7B1FA2',
     fontWeight: '600',
+    flex: 1,
   },
   priceRow: {
     flexDirection: 'row',
@@ -718,6 +736,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actions: {
+    flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: '#f5f5f5',
   },
@@ -728,6 +747,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 6,
     backgroundColor: '#fafafa',
+    flex: 1,
+    borderRightWidth: 1,
+    borderRightColor: '#f0f0f0',
   },
   wishlistButtonText: {
     color: '#f44336',
@@ -737,6 +759,20 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 1,
     backgroundColor: '#f5f5f5',
+  },
+  dismissButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 6,
+    backgroundColor: '#fafafa',
+    flex: 1,
+  },
+  dismissButtonText: {
+    color: '#9E9E9E',
+    fontWeight: '600',
+    fontSize: 12,
   },
   emptyContainer: {
     flex: 1,

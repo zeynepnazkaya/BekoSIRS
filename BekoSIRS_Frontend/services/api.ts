@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 
 // 🔹 Get your computer's local IP address
 // Replace this with YOUR actual IP address from ipconfig/ifconfig
-const COMPUTER_IP = '192.168.1.4';
+const COMPUTER_IP = '172.20.10.3';
 
 // 🔹 Read from .env if available, otherwise fallback to local IP
 export const API_BASE_URL = __DEV__
@@ -23,7 +23,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  timeout: 15000, // 15 second timeout for mobile networks
+  timeout: 30000, // 30 second timeout for ML-heavy endpoints
 });
 
 // Request interceptor

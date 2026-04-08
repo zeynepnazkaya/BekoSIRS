@@ -374,86 +374,149 @@ class RecommendationViewSet(viewsets.ModelViewSet):
         return Recommendation.objects.filter(customer=self.request.user).select_related('product')
 
     def list(self, request):
-        """GET /api/recommendations/ - Get recommendations (with optional refresh)."""
-        refresh = request.query_params.get('refresh', 'false').lower() == 'true'
+        """GET /api/recommendations/ — ALWAYS instant. Refresh triggers background ML."""
         user = request.user
-        
-        # Check if recommendations exist
-        has_recommendations = Recommendation.objects.filter(customer=user).exists()
-        
-        # Generate if forced refresh OR if no recommendations exist (Cold Start fix)
-        if refresh or not has_recommendations:
-            self._generate_recommendations(user, ignore_cache=refresh)
+        refresh = request.query_params.get('refresh', 'false').lower() == 'true'
+
+        # If refresh requested, kick off ML scoring in background (non-blocking)
+        if refresh:
+            self._generate_in_background(user)
 
         recommendations = Recommendation.objects.filter(
-            customer=user
+            customer=user, dismissed=False
         ).select_related('product').order_by('-score')[:10]
 
-        # Fetch ml metrics
-        from products.ml_recommender import get_recommender
-        recommender = get_recommender()
-        metrics = recommender.get_metrics()
-        
-        # Format metrics to match what frontend expects
-        ncf_metrics = metrics.get('ncf', {})
-        content_metrics = metrics.get('content', {})
-        ml_metrics = {
-            'train_r2': ncf_metrics.get('train_r2') if ncf_metrics else None,
-            'test_r2': ncf_metrics.get('test_r2') if ncf_metrics else None,
-            'hit_rate_at_10': ncf_metrics.get('hit_rate_at_10') if ncf_metrics else None,
-            'n_interactions': ncf_metrics.get('n_interactions') if ncf_metrics else None,
-            'n_users': ncf_metrics.get('n_users') if ncf_metrics else None,
-            'n_products': ncf_metrics.get('n_products') if ncf_metrics else None,
-            'n_epochs': ncf_metrics.get('n_epochs') if ncf_metrics else None,
-            'final_loss': ncf_metrics.get('final_loss') if ncf_metrics else None,
-            'trained_at': ncf_metrics.get('trained_at') if ncf_metrics else None,
-            'content_products': content_metrics.get('n_products') if content_metrics else 0,
-            'weights': metrics.get('weights', {})
-        }
+        # If user has zero recs, save popular products as instant fallback
+        if not recommendations.exists():
+            self._save_popular_fallback(user)
+            recommendations = Recommendation.objects.filter(
+                customer=user, dismissed=False
+            ).select_related('product').order_by('-score')[:10]
+
+        # Supplement if fewer than 10 (e.g. after dismissals)
+        rec_list = list(recommendations)
+        if len(rec_list) < 10:
+            existing_product_ids = [r.product_id for r in rec_list]
+            dismissed_product_ids = list(
+                Recommendation.objects.filter(customer=user, dismissed=True)
+                .values_list('product_id', flat=True)
+            )
+            exclude_ids = set(existing_product_ids + dismissed_product_ids)
+            needed = 10 - len(rec_list)
+            fallback_products = Product.objects.exclude(
+                id__in=exclude_ids
+            ).order_by('-id')[:needed]
+            for i, p in enumerate(fallback_products):
+                rec = Recommendation.objects.create(
+                    customer=user,
+                    product=p,
+                    score=0.1 - (i * 0.001),
+                    reason='Sizin İçin Seçtiklerimiz'
+                )
+                rec_list.append(rec)
+            recommendations = rec_list
+
+        # Fetch ml metrics from memory (no DB call)
+        ml_metrics = {}
+        try:
+            from products.ml_recommender import get_recommender
+            recommender = get_recommender()
+            if hasattr(recommender, '_loaded') and recommender._loaded:
+                metrics = recommender.get_metrics()
+                ncf_metrics = metrics.get('ncf', {})
+                content_metrics = metrics.get('content', {})
+                ml_metrics = {
+                    'train_r2': ncf_metrics.get('train_r2') if ncf_metrics else None,
+                    'test_r2': ncf_metrics.get('test_r2') if ncf_metrics else None,
+                    'hit_rate_at_10': ncf_metrics.get('hit_rate_at_10') if ncf_metrics else None,
+                    'n_interactions': ncf_metrics.get('n_interactions') if ncf_metrics else None,
+                    'n_users': ncf_metrics.get('n_users') if ncf_metrics else None,
+                    'n_products': ncf_metrics.get('n_products') if ncf_metrics else None,
+                    'n_epochs': ncf_metrics.get('n_epochs') if ncf_metrics else None,
+                    'final_loss': ncf_metrics.get('final_loss') if ncf_metrics else None,
+                    'trained_at': ncf_metrics.get('trained_at') if ncf_metrics else None,
+                    'content_products': content_metrics.get('n_products') if content_metrics else 0,
+                    'weights': metrics.get('weights', {}),
+                }
+        except Exception:
+            pass
 
         return Response({
             'recommendations': RecommendationSerializer(recommendations, many=True).data,
-            'ml_metrics': ml_metrics
+            'ml_metrics': ml_metrics,
+            'refreshing': refresh,  # Tell frontend ML is recalculating
         })
 
-    def _generate_recommendations(self, user, ignore_cache=False):
-        """Generate new recommendations using ML recommender."""
+    def _save_popular_fallback(self, user):
+        """Save popular products as instant fallback (no ML scoring)."""
         try:
-            from products.ml_recommender import get_recommender
-            from products.models import Product  # Fallback import
-            
-            recommender = get_recommender()
-            recommendations = recommender.recommend(user, top_n=10, ignore_cache=ignore_cache)
-            
-            # FALLBACK: If ML returns empty (Cold User), show popular/random products
-            if not recommendations:
-                # Fallback to recent products
-                fallback_products = Product.objects.all().order_by('-id')[:10]
-                recommendations = []
-                for p in fallback_products:
-                    recommendations.append({
-                        'product_id': p.id,
-                        'score': 0.5,
-                        'reason': 'Popüler Ürünler'
-                    })
-
-            # Clear old and create new
-            Recommendation.objects.filter(customer=user).delete()
-            
-            for rec in recommendations:
+            fallback_products = Product.objects.all().order_by('-id')[:10]
+            for i, p in enumerate(fallback_products):
                 Recommendation.objects.create(
                     customer=user,
-                    product_id=rec['product_id'],
-                    score=rec.get('score', 0),
-                    reason=rec.get('reason', 'AI önerisi')
+                    product_id=p.id,
+                    score=0.5 - (i * 0.01),
+                    reason='Popüler Ürünler'
                 )
-        except Exception as e:
-            pass  # Recommendation generation failed silently
+        except Exception:
+            pass
+
+    def _generate_in_background(self, user):
+        """Run ML scoring in a background thread — never blocks the response."""
+        import threading
+        user_id = user.id  # capture before thread starts
+
+        def _bg():
+            try:
+                import django
+                django.db.connections.close_all()  # fresh DB connections for thread
+
+                from products.ml_recommender import get_recommender
+                from products.models import CustomUser
+
+                bg_user = CustomUser.objects.get(id=user_id)
+                recommender = get_recommender()
+                if not hasattr(recommender, '_loaded') or not recommender._loaded:
+                    return
+
+                # Get dismissed product IDs to exclude from new recs
+                dismissed_ids = list(
+                    Recommendation.objects.filter(customer=bg_user, dismissed=True)
+                    .values_list('product_id', flat=True)
+                )
+
+                recs = recommender.recommend(bg_user, top_n=10 + len(dismissed_ids), ignore_cache=True)
+                if not recs:
+                    return
+
+                # Filter out dismissed products
+                recs = [r for r in recs if r['product_id'] not in dismissed_ids][:10]
+
+                Recommendation.objects.filter(customer=bg_user, dismissed=False).delete()
+                for rec in recs:
+                    Recommendation.objects.create(
+                        customer=bg_user,
+                        product_id=rec['product_id'],
+                        score=rec.get('score', 0),
+                        reason=rec.get('reason', 'AI önerisi')
+                    )
+                import logging
+                logging.getLogger(__name__).info(
+                    "🔄 Background refresh complete for user %s", user_id
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "⚠️ Background refresh failed for user %s: %s", user_id, e
+                )
+
+        t = threading.Thread(target=_bg, daemon=True)
+        t.start()
 
     @action(detail=False, methods=['post'], url_path='generate')
     def generate(self, request):
         """POST /api/recommendations/generate/ - Force generate new recommendations."""
-        self._generate_recommendations(request.user, ignore_cache=True)
+        self._generate_recommendations(request.user)
         return Response({'success': 'Öneriler oluşturuldu'})
 
     @action(detail=True, methods=['post'], url_path='click')
@@ -463,6 +526,19 @@ class RecommendationViewSet(viewsets.ModelViewSet):
         recommendation.clicked = True
         recommendation.save()
         return Response({'success': True})
+
+    @action(detail=True, methods=['post'], url_path='dismiss')
+    def dismiss(self, request, pk=None):
+        """POST /api/recommendations/{id}/dismiss/ - Mark as not interested."""
+        recommendation = self.get_object()
+        recommendation.dismissed = True
+        recommendation.dismissed_at = timezone.now()
+        recommendation.save()
+
+        # Trigger background refresh to generate replacement
+        self._generate_in_background(request.user)
+
+        return Response({'success': True, 'message': 'Öneri reddedildi'})
 
 
 # ---------------------------

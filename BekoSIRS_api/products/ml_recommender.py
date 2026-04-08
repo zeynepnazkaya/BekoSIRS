@@ -1,18 +1,80 @@
 # products/ml_recommender.py
-"""
-Hybrid ML Recommendation System for BekoSIRS.
+# ==============================================================================
+# BEKOSIRS HİBRİT ÖNERİ SİSTEMİ (RECOMMENDATION ENGINE) TEKNİK REFERANS REHBERİ
+# ==============================================================================
+#
+# ADIM 1: GİRDİ VERİLERİ VE ETKİLEŞİM AĞIRLIKLARI. //?????????????bu puanlar neye göre veriliyor??????????????? puanlama ağırlıklaırnla oyna
 
-Architecture:
-  1. Neural Collaborative Filtering (NCF) — learns user-product embeddings via MLP
-  2. Content-Based Filtering — TF-IDF on product text features + cosine similarity
-  3. Popularity-Based Fallback — for cold-start users with no interaction history
-
-The system uses scikit-learn MLPRegressor as the neural component (avoids PyTorch
-dependency while providing genuine neural network learning).
-
-Models are persisted to disk (ml_models/) and loaded on startup.
-"""
-
+# ------------------------------------------------------------------------------
+# 1.1. Etkileşim Puanları (İki farklı yerde hesaplanır):
+#   - Satın Alma (Purchase): 5.0 Puan (En güçlü sinyal)
+#   - Yorum (Review): Verilen yıldız puanı kadar (Modelde), Canlı puanda sadece >3 yıldız olanlar.
+#   - İstek Listesi (Wishlist): 3.0 Puan
+#   - Görüntüleme (View):
+#       * NCF Eğitimi için: Görüntüleme sayısı kadar, maksimum 5 ile sınırlandırılır (Cap).
+#       * Canlı İçerik Puanı için: Görüntüleme sayısı kadar, maksimum 15 ile sınırlandırılır.
+#   - Reddedilen Öneriler (Dismissed): -3.0 Puan (Sadece canlı puanlamada eksi sinyal olarak).
+#
+# 1.2. Ürün Metin Verisi (Content):
+#   - İsim + Açıklama + Marka + (Kategori Adı x 3) birleştirilerek tek metin yapılır. 
+#   - Kategori isminin 3 kez yazılması, kategori ağırlığını yapay zeka gözünde artırır.
+#
+# ADIM 2: MODELLERİN EĞİTİLMESİ VE MATEMATİKSEL HESAPLAMALAR
+# ------------------------------------------------------------------------------
+# 2.1. Neural Collaborative Filtering (NCF) - Yapay Sinir Ağı:
+#   - Mimari: Scikit-learn MLPRegressor (128 -> 64 -> 32 -> 16 -> 1 nöronlu ReLU ağ).
+#   - Modele Giren 14 Özellik (Feature Vector):
+#       1. Kategori (Label Encoded)
+#       2. Fiyat / Ortalama Fiyat (Normalize Fiyat)
+#       3. Fiyat Sepeti (0-4 arası, Price Bucket)
+#       4. Kullanıcının verdiği/aldığı ortalama puan
+#       5. Kullanıcının toplam etkileşim sayısı
+#       6. Kullanıcının puanlarının standart sapması
+#       7. Kullanıcının etkileşime girdiği benzersiz ürün sayısı
+#       8. Ürünün sitedeki ortalama yıldız puanı
+#       9. Ürüne yapılan toplam yorum sayısı
+#      10. Ürünün toplam görüntülenme sayısı
+#      11. Ürünün toplam satın alınma sayısı
+#      12. Ürünün kaç kişinin istek listesinde olduğu
+#      13. Kullanıcı - Kategori Yakınlığı (Kullanıcı bu kategoriyle ne kadar ilgili?)
+#      14. Kullanıcının özel olarak bu ürünü kaç kez görüntülediği.
+#   - Tüm bu veriler MinMaxScaler ile 0-1 arasına çekilip ağa sokulur.
+#
+# 2.2. İçerik Tabanlı Filtreleme (Content-Based - TF-IDF & Kosinüs Benzerliği): //.  ??????????bag of words yoksa sadece tf idf?????  
+#   - TF-IDF Vectorizer en çok geçen 5000 kelime/ikili kelime grubunu (1-2 ngram) çıkarır.
+#   - Ürünler arası Kosinüs Benzerliği (Cosine Similarity) hesaplanır.
+#   - Kategori Bonusu: Eğer iki ürün aynı kategorideyse, benzerlik skorlarına statik +0.15 eklenir.
+#
+# 2.3. Popülerlik (Cold-Start / Yedek Sistem):
+#   - Formül: (Toplam Görüntüleme x 1) + (Toplam Yorum x 3) + (Toplam Satın Alma x 5)
+#
+# ADIM 3: CANLI PUANLAMA VE BONUS HESAPLAMALARI (Kullanıcı İstek Attığında)
+# ------------------------------------------------------------------------------
+# 1. Ham Skorların Çekilmesi ve Normalize Edilmesi:
+#   - NCF, Content ve Popülerlik modellerinden gelen skorlar kendi içlerindeki en yüksek değere (max) 
+#     bölünerek 0 ile 1 arasına (Normalize) çekilir.
+# 
+# 2. Hibrit Formül Ağırlıkları (WEIGHTS): //genel weightleri değiştir r2 değişiyor mu
+#   - Nihai Puan = (NCF Skoru x 0.5) + (Content Skoru x 0.3) + (Popülerlik Skoru x 0.2)
+#
+# 3. Anlık Bonuslar (Boosts):
+#   - Arama Bonusu (Search Boost): Kullanıcının son 5 araması ürünün TF-IDF metninde geçiyorsa,
+#     ürünün nihai puanına DİREKT +2.0 eklenir.
+#   - Fiyat Duyarlılığı Bonusu (Price Sensitivity Boost): Kullanıcının daha önce aldığı ve baktığı 
+#     ürünlerin ortalama fiyatı (avg_price) bulunur. Eğer aday ürünün fiyatı bu ortalamanın 
+#     %70'i ile %130'u arasındaysa, nihai puana +0.5 eklenir.
+#
+# ADIM 4: FİLTRELEME, DİVERSİFİKASYON VE KULLANICIYA SUNUM
+# ------------------------------------------------------------------------------
+# - Kesin Elemeler: Kullanıcının daha önce satın aldığı ürünler listeden tamamen çıkartılır.
+# - Kategori Kısıtlaması (Diversity):
+#   * Sistemin tek tip ürün önermemesi için aynı kategoriden en fazla 4 ürün alınır.
+#   * Sadece kullanıcının geçmişte etkileşime girdiği (tıkladığı, aldığı vb.) kategorilerdeki
+#     ürünler listeye dahil edilir. 
+#   * Eğer listede yeterli (Top-N) ürün kalmazsa, bu kısıtlama esnetilir ve diğer kategoriler açılır.
+# - Etiketleme (Reasoning): Ürünün puanı en çok nereden geldiyse veya hangi bonusu aldıysa,
+#   "Aramalarınıza göre", "Bütçenize uygun", "[Kategori] beğenenler bunu da beğendi" gibi dinamik metinler üretilir.
+# ==============================================================================    
 import os
 import time
 import threading
@@ -45,6 +107,42 @@ CONTENT_MODEL_PATH = os.path.join(ML_MODELS_DIR, 'content_model.pkl')
 ENCODERS_PATH = os.path.join(ML_MODELS_DIR, 'encoders.pkl')
 METRICS_PATH = os.path.join(ML_MODELS_DIR, 'metrics.pkl')
 
+
+# ---------------------------------------------------------------------------
+# Database Sync Helpers (for shared model storage via Supabase PostgreSQL)
+# ---------------------------------------------------------------------------
+def _save_model_to_db(file_path):
+    """Upload a local model file to the MLModelStore database table."""
+    try:
+        from .models import MLModelStore
+        file_name = os.path.basename(file_path)
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        MLModelStore.objects.update_or_create(
+            name=file_name,
+            defaults={'data': data}
+        )
+        logger.info("☁️  Synced %s to database (%.1f KB)", file_name, len(data) / 1024)
+    except Exception as e:
+        logger.warning("⚠️  Could not sync %s to database: %s", file_path, e)
+
+
+def _load_model_from_db(file_path):
+    """Download a model file from the MLModelStore database table to local disk."""
+    try:
+        from .models import MLModelStore
+        file_name = os.path.basename(file_path)
+        record = MLModelStore.objects.filter(name=file_name).first()
+        if record and record.data:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'wb') as f:
+                f.write(bytes(record.data))
+            logger.info("📥 Downloaded %s from database (%.1f KB)", file_name, len(record.data) / 1024)
+            return True
+        return False
+    except Exception as e:
+        logger.warning("⚠️  Could not load %s from database: %s", file_path, e)
+        return False
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. NEURAL COLLABORATIVE FILTERING MODEL
@@ -288,22 +386,22 @@ class NCFModel:
 
         if verbose:
             print(f"\n🧠 Training Neural Collaborative Filtering model...")
-            print(f"   Architecture: Input({X.shape[1]}) → 64 → 32 → 16 → 1")
+            print(f"   Architecture: Input({X.shape[1]}) → 128 → 64 → 32 → 16 → 1")
             print(f"   Training samples: {len(X_train)}, Test samples: {len(X_test)}")
 
-        # Build and train MLP — tuned for small-medium datasets
+        # Build and train MLP — tuned for small-to-large datasets
         self.model = MLPRegressor(
-            hidden_layer_sizes=(64, 32, 16),
+            hidden_layer_sizes=(128, 64, 32, 16),
             activation='relu',
             solver='adam',
             learning_rate='adaptive',
-            learning_rate_init=0.0005,
+            learning_rate_init=0.0003,
             max_iter=epochs,
-            batch_size=min(32, len(X_train)),
+            batch_size=min(64, len(X_train)),
             early_stopping=True if len(X_train) > 20 else False,
             validation_fraction=0.15 if len(X_train) > 20 else 0.0,
-            n_iter_no_change=30,
-            tol=1e-5,
+            n_iter_no_change=50,
+            tol=1e-6,
             random_state=42,
             verbose=False
         )
@@ -480,7 +578,7 @@ class NCFModel:
         return scores
 
     def save(self, path=None):
-        """Save trained model to disk."""
+        """Save trained model to disk and to the shared database."""
         os.makedirs(ML_MODELS_DIR, exist_ok=True)
         joblib.dump(self.model, path or NCF_MODEL_PATH)
         joblib.dump({
@@ -493,9 +591,21 @@ class NCFModel:
         joblib.dump(self.training_metrics, METRICS_PATH)
         logger.info("✅ NCF model saved to %s", ML_MODELS_DIR)
 
+        # Sync to shared database
+        for file_path in [path or NCF_MODEL_PATH, ENCODERS_PATH, METRICS_PATH]:
+            _save_model_to_db(file_path)
+
     def load(self, path=None):
-        """Load trained model from disk."""
+        """Load trained model from disk, falling back to database if local files are missing."""
         model_path = path or NCF_MODEL_PATH
+
+        # If local files are missing, try downloading from database
+        if not os.path.exists(model_path) or not os.path.exists(ENCODERS_PATH):
+            logger.info("📥 Local NCF model files missing, trying database...")
+            for file_path in [model_path, ENCODERS_PATH, METRICS_PATH]:
+                _load_model_from_db(file_path)
+
+        # Now try loading from local files
         if not os.path.exists(model_path) or not os.path.exists(ENCODERS_PATH):
             return False
 
@@ -642,17 +752,27 @@ class ContentBasedModel:
         return scores
 
     def save(self, path=None):
-        """Save content model to disk."""
+        """Save content model to disk and to the shared database."""
         os.makedirs(ML_MODELS_DIR, exist_ok=True)
+        save_path = path or CONTENT_MODEL_PATH
         joblib.dump({
             'similarity_matrix': self.similarity_matrix,
             'products_df': self.products_df,
             'indices': self.indices,
-        }, path or CONTENT_MODEL_PATH)
+        }, save_path)
+
+        # Sync to shared database
+        _save_model_to_db(save_path)
 
     def load(self, path=None):
-        """Load content model from disk."""
+        """Load content model from disk, falling back to database if local file is missing."""
         model_path = path or CONTENT_MODEL_PATH
+
+        # If local file is missing, try downloading from database
+        if not os.path.exists(model_path):
+            logger.info("📥 Local content model missing, trying database...")
+            _load_model_from_db(model_path)
+
         if not os.path.exists(model_path):
             return False
         try:
@@ -705,22 +825,75 @@ class HybridRecommender:
         return cls._instance
 
     def _init_models(self):
-        """Initialize sub-models and try to load from disk."""
+        """Initialize sub-models, try to load, and auto-train in background if needed."""
         self.ncf = NCFModel()
         self.content = ContentBasedModel()
         self._loaded = False
+        self._training = False
 
-        # Try loading persisted models
+        # Try loading persisted models (checks local disk, then DB)
         ncf_loaded = self.ncf.load()
         content_loaded = self.content.load()
         self._loaded = ncf_loaded or content_loaded
 
         if self._loaded:
             logger.info("✅ Recommender loaded saved models from disk")
+            # Pre-generate recommendations for active users in background
+            self._pregenerate_in_background()
         else:
-            logger.info("ℹ️  No saved models found — will train on first request or via management command")
+            logger.info("ℹ️  No saved models found — starting background training...")
+            self._train_in_background()
 
-    def train(self, epochs=50, verbose=True):
+    def _pregenerate_in_background(self):
+        """Pre-generate recommendations for active customers so pages load instantly."""
+        import threading
+        def _bg_pregen():
+            try:
+                from .models import Recommendation
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                # Only customers who don't already have recommendations
+                customers = User.objects.filter(role='customer')
+                for user in customers:
+                    has_recs = Recommendation.objects.filter(customer=user).exists()
+                    if not has_recs:
+                        try:
+                            recs = self.recommend(user, top_n=10, ignore_cache=True)
+                            if recs:
+                                for rec in recs:
+                                    Recommendation.objects.create(
+                                        customer=user,
+                                        product_id=rec['product_id'],
+                                        score=rec.get('score', 0),
+                                        reason=rec.get('reason', 'AI önerisi')
+                                    )
+                                logger.info("📦 Pre-generated recs for user %s", user.id)
+                        except Exception as e:
+                            logger.debug("Pre-gen failed for user %s: %s", user.id, e)
+                logger.info("✅ Background pre-generation complete")
+            except Exception as e:
+                logger.warning("⚠️  Background pre-generation failed: %s", e)
+        t = threading.Thread(target=_bg_pregen, daemon=True)
+        t.start()
+
+    def _train_in_background(self):
+        """Run training in a background thread so it never blocks requests."""
+        if self._training:
+            return
+        self._training = True
+        import threading
+        def _bg_train():
+            try:
+                self.train(epochs=300, verbose=False)
+                logger.info("✅ Background training complete")
+            except Exception as e:
+                logger.warning("⚠️  Background auto-train failed: %s", e)
+            finally:
+                self._training = False
+        t = threading.Thread(target=_bg_train, daemon=True)
+        t.start()
+
+    def train(self, epochs=300, verbose=True):
         """Train all sub-models and persist them."""
         if verbose:
             print("=" * 60)
@@ -777,7 +950,7 @@ class HybridRecommender:
         exclude_ids.update(owned_product_ids)  # Don't recommend already purchased items
 
         final_scores = {}
-        reasons = {}
+        reasons = {}  # Stores (source_type, extra_info) tuples
 
         all_product_ids = self.content.products_df['id'].tolist()
 
@@ -792,7 +965,7 @@ class HybridRecommender:
                     if pid not in exclude_ids:
                         normalized = (score / max_ncf) * self.WEIGHT_NCF
                         final_scores[pid] = normalized
-                        reasons[pid] = "ML modeli tarafından önerildi"
+                        reasons[pid] = ('ncf', None)
 
         # ── 2. Content-Based Scores ──
         if self.content.is_trained and user_interactions:
@@ -806,7 +979,7 @@ class HybridRecommender:
                         normalized = (score / max_content) * self.WEIGHT_CONTENT
                         final_scores[pid] = final_scores.get(pid, 0) + normalized
                         if pid not in reasons:
-                            reasons[pid] = "İlgi alanlarınıza göre"
+                            reasons[pid] = ('content', None)
 
         # ── 3. Popularity Scores (cold-start fallback) ──
         popularity_scores = self._get_popularity_scores()
@@ -817,22 +990,22 @@ class HybridRecommender:
                     normalized = (score / max_pop) * self.WEIGHT_POPULARITY
                     final_scores[pid] = final_scores.get(pid, 0) + normalized
                     if pid not in reasons:
-                        reasons[pid] = "Popüler ürün"
+                        reasons[pid] = ('popular', None)
 
         # ── 4. Search History Boost ──
         search_boosts = self._get_search_boosts(user)
         for pid, boost in search_boosts.items():
             if pid not in exclude_ids:
                 final_scores[pid] = final_scores.get(pid, 0) + boost
-                reasons[pid] = "Aramalarınıza göre"
+                reasons[pid] = ('search', None)
 
         # ── 5. Price Sensitivity Boost ──
         price_boosts = self._get_price_sensitivity_boosts(user)
         for pid, boost in price_boosts.items():
             if pid not in exclude_ids and pid in final_scores:
                 final_scores[pid] += boost
-                if boost > 0.1 and reasons.get(pid) not in ("Aramalarınıza göre",):
-                    reasons[pid] = "Fiyat aralığınıza uygun"
+                if boost > 0.1 and reasons.get(pid, (None,))[0] not in ('search',):
+                    reasons[pid] = ('price', None)
 
         # ── Format and return ──
         return self._format_results(final_scores, reasons, top_n, exclude_ids, user=user)
@@ -843,7 +1016,7 @@ class HybridRecommender:
 
     def _get_user_interactions(self, user, ignore_cache=False):
         """Gather user interaction scores: {product_id: weight}."""
-        from .models import ProductOwnership, Review, WishlistItem, ViewHistory
+        from .models import ProductOwnership, Review, WishlistItem, ViewHistory, Recommendation
 
         cache_key = f'ml_user_interactions_{user.id}'
         if not ignore_cache:
@@ -865,7 +1038,7 @@ class HybridRecommender:
         ).values('product_id', 'rating'):
             interactions[r['product_id']] = interactions.get(r['product_id'], 0) + float(r['rating'])
 
-        # Wishlist items (weight=3.0)
+        # Wishlist items (weight=3.0) — positive signal
         for pid in WishlistItem.objects.filter(
             wishlist__customer=user
         ).values_list('product_id', flat=True):
@@ -875,6 +1048,13 @@ class HybridRecommender:
         for vh in ViewHistory.objects.filter(customer=user).values('product_id', 'view_count'):
             weight = min(vh['view_count'], 15)  # Cap at 15
             interactions[vh['product_id']] = interactions.get(vh['product_id'], 0) + weight
+
+        # Dismissed recommendations (weight=-3.0) — negative signal
+        # Mirrors wishlist's +3.0 but inverted: penalizes similar products
+        for pid in Recommendation.objects.filter(
+            customer=user, dismissed=True
+        ).values_list('product_id', flat=True):
+            interactions[pid] = interactions.get(pid, 0) - 3.0
 
         cache.set(cache_key, interactions, 300)
         return interactions
@@ -996,12 +1176,20 @@ class HybridRecommender:
 
         # ── Get categories the user has actually interacted with ──
         user_categories = set()
+        # Build a map of category -> most viewed product name (for rich reasons)
+        category_top_product = {}  # {category_name: product_name}
         if user:
-            # From views
-            view_cats = ViewHistory.objects.filter(
+            # From views — get the most viewed product per category
+            view_data = ViewHistory.objects.filter(
                 customer=user
-            ).values_list('product__category__name', flat=True).distinct()
-            user_categories.update(str(c).strip() for c in view_cats if c)
+            ).select_related('product__category').order_by('-view_count')
+            for vh in view_data:
+                cat_name = vh.product.category.name if vh.product.category else None
+                if cat_name:
+                    cat_name = str(cat_name).strip()
+                    user_categories.add(cat_name)
+                    if cat_name not in category_top_product:
+                        category_top_product[cat_name] = vh.product.name
             
             # From reviews
             review_cats = Review.objects.filter(
@@ -1020,6 +1208,44 @@ class HybridRecommender:
                 wishlist__customer=user
             ).values_list('product__category__name', flat=True).distinct()
             user_categories.update(str(c).strip() for c in wishlist_cats if c)
+
+        def _build_reason(product, reason_tuple):
+            """Build a specific, user-friendly reason string."""
+            source = reason_tuple[0] if reason_tuple else 'default'
+            cat_name = product.category.name if product.category else None
+            
+            # Find the user's top viewed product in this category
+            top_viewed = category_top_product.get(cat_name) if cat_name else None
+            
+            if source == 'search':
+                return f"Aramalarınıza göre önerildi"
+            elif source == 'price':
+                if cat_name:
+                    return f"{cat_name} — bütçenize uygun"
+                return "Fiyat aralığınıza uygun"
+            elif source == 'content':
+                if top_viewed:
+                    # Truncate long product names
+                    short_name = top_viewed[:30] + ('…' if len(top_viewed) > 30 else '')
+                    return f"\"{short_name}\" incelemenize benzer"
+                elif cat_name:
+                    return f"{cat_name} ilgi alanınıza göre"
+                return "Görüntüleme geçmişinize göre"
+            elif source == 'ncf':
+                if top_viewed:
+                    short_name = top_viewed[:30] + ('…' if len(top_viewed) > 30 else '')
+                    return f"\"{short_name}\" beğenenler bunu da beğendi"
+                elif cat_name:
+                    return f"{cat_name} kategorisinde sizin için seçildi"
+                return "Kullanıcı davranışlarınıza göre"
+            elif source == 'popular':
+                if cat_name:
+                    return f"{cat_name} kategorisinde popüler"
+                return "Çok tercih edilen ürün"
+            else:
+                if cat_name:
+                    return f"{cat_name} — sizin için seçildi"
+                return "Sizin için seçildi"
 
         # ── Category diversity: max 4 items per category, only from user's categories ──
         MAX_PER_CATEGORY = 4
@@ -1042,11 +1268,12 @@ class HybridRecommender:
                     continue
 
                 if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
+                    reason_tuple = reasons.get(pid, ('default', None))
                     diverse_items.append({
                         'product': product,
                         'product_id': p_id,
                         'score': round(float(score), 4),
-                        'reason': reasons.get(pid, 'Sizin için seçildi'),
+                        'reason': _build_reason(product, reason_tuple),
                     })
                     category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
                     added_pids.add(p_id)
@@ -1067,11 +1294,12 @@ class HybridRecommender:
                     cat_name = str(product.category.name).strip() if product.category else 'Other'
 
                     if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
+                        reason_tuple = reasons.get(pid, ('default', None))
                         diverse_items.append({
                             'product': product,
                             'product_id': p_id,
                             'score': round(float(score), 4),
-                            'reason': reasons.get(pid, 'Sizin için seçildi (Yeni Kategori)'),
+                            'reason': _build_reason(product, reason_tuple),
                         })
                         category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
                         added_pids.add(p_id)
@@ -1120,6 +1348,47 @@ class HybridRecommender:
     @classmethod
     def get_instance(cls):
         return cls()
+
+    def _get_model_age_hours(self):
+        """Return the age of the saved model in hours, or None if unknown."""
+        if os.path.exists(METRICS_PATH):
+            try:
+                mtime = os.path.getmtime(METRICS_PATH)
+                age_seconds = time.time() - mtime
+                return age_seconds / 3600
+            except OSError:
+                pass
+        return None
+
+    def retrain_if_stale(self):
+        """Retrain models if they are older than the configured interval."""
+        retrain_interval = getattr(settings, 'ML_RETRAIN_INTERVAL_HOURS', 6)
+        age_hours = self._get_model_age_hours()
+
+        if age_hours is not None and age_hours < retrain_interval:
+            logger.info(
+                "⏰ ML model is %.1f hours old (threshold: %d hours) — skipping retrain",
+                age_hours, retrain_interval
+            )
+            return False
+
+        logger.info(
+            "🔄 ML model is %s — starting retraining...",
+            f"{age_hours:.1f} hours old" if age_hours is not None else "not found"
+        )
+
+        try:
+            success = self.train(epochs=300, verbose=False)
+            if success:
+                logger.info("✅ Periodic retraining complete")
+                # Invalidate caches so new recommendations use fresh model
+                self.invalidate_cache()
+            else:
+                logger.warning("⚠️  Periodic retraining did not produce a model (insufficient data?)")
+            return success
+        except Exception as e:
+            logger.error("❌ Periodic retraining failed: %s", e)
+            return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════

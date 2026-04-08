@@ -47,7 +47,8 @@ numpy==1.26.4
 scikit-learn==1.5.1
 opencv-python-headless==4.9.0.80
 deepface==0.0.86
-tf-keras==2.15.0
+tensorflow==2.15.1    # <-- ADD THIS: Forces TF to stay compatible with Keras 2
+keras==2.15.0
 
 # ==============================================================================
 # FILE PROCESSING

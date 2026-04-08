@@ -6,12 +6,15 @@ from products.ml_recommender import get_recommender
 class Command(BaseCommand):
     help = 'Train the ML recommendation model with current data'
 
+    def add_arguments(self, parser):
+        parser.add_argument("--epochs", type=int, default=300, help="Max training epochs (default 300)")
+
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting ML recommender training...'))
         
         try:
             recommender = get_recommender()
-            success = recommender.train(verbose=True)
+            success = recommender.train(epochs=options["epochs"], verbose=True)
             
             if success:
                 self.stdout.write(self.style.SUCCESS(f'\n✓ Model trained successfully'))

@@ -59,6 +59,8 @@ export const recommendationAPI = {
     generateRecommendations: () => api.post('api/v1/recommendations/generate/'),
     recordClick: (recommendationId: number) =>
         api.post(`api/v1/recommendations/${recommendationId}/click/`),
+    dismissRecommendation: (recommendationId: number) =>
+        api.post(`api/v1/recommendations/${recommendationId}/dismiss/`),
 };
 
 // ─────────────────────────────────────────

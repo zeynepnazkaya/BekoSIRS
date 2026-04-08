@@ -466,6 +466,8 @@ class Recommendation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     is_shown = models.BooleanField(default=False)
     clicked = models.BooleanField(default=False)
+    dismissed = models.BooleanField(default=False, help_text="Kullanıcı bu öneriyi reddetmiş")
+    dismissed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ('customer', 'product')
@@ -1065,3 +1067,30 @@ class CustomerAddress(models.Model):
         if self.district:
             location += f", {self.district.name}"
         return f"{self.user.username} - {location}"
+
+
+# -------------------------------
+# 🔹 MLModelStore (ML Model Depolama)
+# -------------------------------
+class MLModelStore(models.Model):
+    """
+    Stores serialized ML model files (pickle) as binary data in the database.
+    This allows all developers to share trained models via the shared Supabase DB
+    without needing to copy files manually or retrain locally.
+    """
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name="Model Dosya Adı",
+        help_text="Örn: ncf_model.pkl, content_model.pkl"
+    )
+    data = models.BinaryField(verbose_name="Model Verisi")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Son Güncelleme")
+
+    class Meta:
+        verbose_name = "ML Model Deposu"
+        verbose_name_plural = "ML Model Depoları"
+
+    def __str__(self):
+        size_kb = len(self.data) / 1024 if self.data else 0
+        return f"{self.name} ({size_kb:.1f} KB) - {self.updated_at}"
