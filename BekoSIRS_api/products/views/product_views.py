@@ -20,7 +20,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
 
     def get_permissions(self):
-        if self.action in ["list", "retrieve", "popular"]:
+        if self.action in ["list", "retrieve", "popular", "similar"]:
             return [AllowAny()]
         from products.permissions import IsSeller
         return [IsSeller()]
@@ -142,6 +142,48 @@ class ProductViewSet(viewsets.ModelViewSet):
         
         # Serialize and return
         serializer = self.get_serializer(sorted_products, many=True)
+        return Response(serializer.data)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="similar",
+        permission_classes=[AllowAny],
+    )
+    def similar(self, request, pk=None):
+        """GET /api/v1/products/{id}/similar/ - ML-powered similar products."""
+        product = self.get_object()
+        top_n = int(request.query_params.get('limit', 10))
+
+        similar_products = []
+
+        try:
+            from products.ml_recommender import get_recommender
+            recommender = get_recommender()
+
+            if recommender.content.is_trained:
+                similar_scores = recommender.content.get_similar_products(product.id, top_n=top_n)
+                if similar_scores:
+                    product_ids = list(similar_scores.keys())
+                    products_qs = Product.objects.filter(id__in=product_ids).select_related('category')
+                    products_map = {p.id: p for p in products_qs}
+                    # Preserve score ordering
+                    for pid in product_ids:
+                        if pid in products_map:
+                            similar_products.append(products_map[pid])
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Similar products ML error: %s", e)
+
+        # Fallback: same category products if ML didn't return results
+        if not similar_products:
+            similar_products = list(
+                Product.objects.filter(category=product.category)
+                .exclude(id=product.id)
+                .select_related('category')[:top_n]
+            )
+
+        serializer = self.get_serializer(similar_products, many=True)
         return Response(serializer.data)
 
     def perform_update(self, serializer):

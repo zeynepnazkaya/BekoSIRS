@@ -16,6 +16,7 @@ import { Image } from 'expo-image';
 import { FontAwesome } from '@expo/vector-icons';
 import api, { wishlistAPI, productAPI, recommendationAPI } from '../../../services';
 import { ProductCard } from '../../../components/ProductCard';
+import { CompareModal } from '../../../components/CompareModal';
 import { useRouter, Router } from 'expo-router';
 import { getToken } from '../../../storage/storage.native';
 import { useLanguage } from '../../../context/LanguageContext';
@@ -53,30 +54,45 @@ interface Product {
 
 // --- Extracted Components to preventing Re-render Focus Loss ---
 
-const PopularProductCard = ({ item, router }: { item: Product; router: Router }) => (
-  <TouchableOpacity
-    style={styles.popularCard}
-    onPress={() => router.push(`/product/${item.id}`)}
-    activeOpacity={0.8}
-  >
-    {item.image ? (
-      <Image
-        source={{ uri: getImageUrl(item.image) || '' }}
-        style={styles.popularImage}
-        contentFit="cover"
-        transition={200}
-      />
-    ) : (
-      <View style={[styles.popularImage, styles.imagePlaceholder]}>
-        <FontAwesome name="cube" size={40} color="#D1D5DB" />
+const PopularProductCard = ({ item, router, compareMode, isSelected, onCompareSelect }: {
+  item: Product;
+  router: Router;
+  compareMode?: boolean;
+  isSelected?: boolean;
+  onCompareSelect?: (p: Product) => void;
+}) => (
+  <View style={{ position: 'relative' }}>
+    <TouchableOpacity
+      style={[styles.popularCard, isSelected && { borderWidth: 2, borderColor: '#6366F1' }]}
+      onPress={compareMode && onCompareSelect ? () => onCompareSelect(item) : () => router.push(`/product/${item.id}`)}
+      activeOpacity={0.8}
+    >
+      {item.image ? (
+        <Image
+          source={{ uri: getImageUrl(item.image) || '' }}
+          style={styles.popularImage}
+          contentFit="cover"
+          transition={200}
+        />
+      ) : (
+        <View style={[styles.popularImage, styles.imagePlaceholder]}>
+          <FontAwesome name="cube" size={40} color="#D1D5DB" />
+        </View>
+      )}
+      <View style={styles.popularInfo}>
+        <Text style={styles.popularBrand} numberOfLines={1}>{item.brand}</Text>
+        <Text style={styles.popularName} numberOfLines={2}>{item.name}</Text>
+        <Text style={styles.popularPrice}>{item.price} TL</Text>
+      </View>
+    </TouchableOpacity>
+    {compareMode && (
+      <View style={styles.popularCompareCheck}>
+        <View style={[styles.compareCheck, isSelected && styles.compareCheckSelected]}>
+          {isSelected && <FontAwesome name="check" size={12} color="#fff" />}
+        </View>
       </View>
     )}
-    <View style={styles.popularInfo}>
-      <Text style={styles.popularBrand} numberOfLines={1}>{item.brand}</Text>
-      <Text style={styles.popularName} numberOfLines={2}>{item.name}</Text>
-      <Text style={styles.popularPrice}>{item.price} TL</Text>
-    </View>
-  </TouchableOpacity>
+  </View>
 );
 
 interface HomeListHeaderProps {
@@ -92,6 +108,11 @@ interface HomeListHeaderProps {
   recommendedProducts: any[];
   router: Router;
   isSearching: boolean;
+  compareMode: boolean;
+  setCompareMode: (v: boolean) => void;
+  compareCount: number;
+  compareProducts: Product[];
+  toggleCompareProduct: (p: Product) => void;
 }
 
 const HomeListHeader = ({
@@ -106,7 +127,12 @@ const HomeListHeader = ({
   clearFilters,
   recommendedProducts,
   router,
-  isSearching
+  isSearching,
+  compareMode,
+  setCompareMode,
+  compareCount,
+  compareProducts,
+  toggleCompareProduct,
 }: HomeListHeaderProps) => (
   <View style={styles.headerContainer}>
     {/* Arama Kutusu */}
@@ -131,6 +157,19 @@ const HomeListHeader = ({
       )}
     </View>
 
+    {/* Compare Mode Toggle */}
+    {!searchQuery && (
+      <TouchableOpacity
+        style={[styles.compareToggle, compareMode && styles.compareToggleActive]}
+        onPress={() => setCompareMode(!compareMode)}
+      >
+        <FontAwesome name="columns" size={14} color={compareMode ? '#fff' : '#6366F1'} />
+        <Text style={[styles.compareToggleText, compareMode && styles.compareToggleTextActive]}>
+          {compareMode ? `Karşılaştırma Modu (${compareCount}/2)` : 'Ürün Karşılaştır'}
+        </Text>
+      </TouchableOpacity>
+    )}
+
     {/* Suggested for You Section - ML driven */}
     {recommendedProducts.length > 0 && !searchQuery && (
       <View style={styles.popularSection}>
@@ -149,7 +188,10 @@ const HomeListHeader = ({
             <PopularProductCard 
               key={rec.product.id || index} 
               item={rec.product} 
-              router={router} 
+              router={router}
+              compareMode={compareMode}
+              isSelected={compareProducts.some(p => p.id === rec.product.id)}
+              onCompareSelect={toggleCompareProduct}
             />
           ))}
         </ScrollView>
@@ -171,7 +213,14 @@ const HomeListHeader = ({
           contentContainerStyle={styles.popularScroll}
         >
           {popularProducts.map((product) => (
-            <PopularProductCard key={product.id} item={product} router={router} />
+            <PopularProductCard
+              key={product.id}
+              item={product}
+              router={router}
+              compareMode={compareMode}
+              isSelected={compareProducts.some(p => p.id === product.id)}
+              onCompareSelect={toggleCompareProduct}
+            />
           ))}
         </ScrollView>
       </View>
@@ -299,6 +348,9 @@ const HomeScreen = () => {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<'all' | 'reviews' | 'comments' | 'popular'>('all');
   const [wishlistIds, setWishlistIds] = useState<Set<number>>(new Set());
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareProducts, setCompareProducts] = useState<Product[]>([]);
+  const [showCompareModal, setShowCompareModal] = useState(false);
 
   // Track if initial data has been loaded
   const isInitialLoadDone = useRef(false);
@@ -436,6 +488,24 @@ const HomeScreen = () => {
     searchProducts('', null);
   }, [searchProducts]);
 
+  const toggleCompareProduct = useCallback((product: Product) => {
+    setCompareProducts(prev => {
+      const exists = prev.find(p => p.id === product.id);
+      if (exists) {
+        return prev.filter(p => p.id !== product.id);
+      }
+      if (prev.length >= 2) {
+        return prev; // max 2
+      }
+      return [...prev, product];
+    });
+  }, []);
+
+  const handleExitCompareMode = useCallback(() => {
+    setCompareMode(false);
+    setCompareProducts([]);
+  }, []);
+
   // Show full-screen loading only on initial load
   if (initialLoading) {
     return (
@@ -450,18 +520,35 @@ const HomeScreen = () => {
     <SafeAreaView style={styles.container}>
       <FlatList
         data={filteredProducts}
-        renderItem={({ item }) => (
-          <ProductCard
-            product={item}
-            initialInWishlist={wishlistIds.has(item.id)}
-            compact={true}
-            style={{ width: ITEM_WIDTH }}
-          />
-        )}
+        renderItem={({ item }) => {
+          const isSelected = compareProducts.some(p => p.id === item.id);
+          return (
+            <View style={{ width: ITEM_WIDTH }}>
+              <ProductCard
+                product={item}
+                initialInWishlist={wishlistIds.has(item.id)}
+                compact={true}
+                style={{ width: '100%' }}
+                onPress={compareMode ? () => toggleCompareProduct(item) : undefined}
+              />
+              {compareMode && (
+                <TouchableOpacity
+                  style={[styles.compareOverlay, isSelected && styles.compareOverlaySelected]}
+                  onPress={() => toggleCompareProduct(item)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.compareCheck, isSelected && styles.compareCheckSelected]}>
+                    {isSelected && <FontAwesome name="check" size={12} color="#fff" />}
+                  </View>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        }}
         keyExtractor={(item) => item.id.toString()}
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, compareMode && { paddingBottom: 100 }]}
         ListHeaderComponent={
           <HomeListHeader
             searchQuery={searchQuery}
@@ -476,6 +563,11 @@ const HomeScreen = () => {
             recommendedProducts={recommendedProducts}
             router={router}
             isSearching={isSearching}
+            compareMode={compareMode}
+            setCompareMode={(v) => { if (!v) handleExitCompareMode(); else setCompareMode(true); }}
+            compareCount={compareProducts.length}
+            compareProducts={compareProducts}
+            toggleCompareProduct={toggleCompareProduct}
           />
         }
         refreshControl={
@@ -499,6 +591,62 @@ const HomeScreen = () => {
             )}
           </View>
         }
+      />
+
+      {/* Compare Bottom Bar */}
+      {compareMode && (
+        <View style={styles.compareBar}>
+          <View style={styles.compareBarProducts}>
+            {compareProducts.map(p => (
+              <View key={p.id} style={styles.compareBarItem}>
+                {p.image ? (
+                  <Image
+                    source={{ uri: getImageUrl(p.image) || '' }}
+                    style={styles.compareBarImage}
+                    contentFit="contain"
+                  />
+                ) : (
+                  <View style={[styles.compareBarImage, { backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center' }]}>
+                    <FontAwesome name="cube" size={14} color="#D1D5DB" />
+                  </View>
+                )}
+                <Text style={styles.compareBarName} numberOfLines={1}>{p.name}</Text>
+                <TouchableOpacity
+                  style={styles.compareBarRemove}
+                  onPress={() => toggleCompareProduct(p)}
+                >
+                  <FontAwesome name="times" size={10} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {compareProducts.length < 2 && (
+              <View style={styles.compareBarEmpty}>
+                <FontAwesome name="plus" size={16} color="#9CA3AF" />
+                <Text style={styles.compareBarEmptyText}>Ürün Seçin</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.compareBarActions}>
+            <TouchableOpacity
+              style={[styles.compareButton, compareProducts.length < 2 && styles.compareButtonDisabled]}
+              onPress={() => compareProducts.length === 2 && setShowCompareModal(true)}
+              disabled={compareProducts.length < 2}
+            >
+              <FontAwesome name="columns" size={14} color="#fff" />
+              <Text style={styles.compareButtonText}>Karşılaştır</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.compareCancelButton} onPress={handleExitCompareMode}>
+              <Text style={styles.compareCancelText}>İptal</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <CompareModal
+        visible={showCompareModal}
+        products={compareProducts}
+        onClose={() => setShowCompareModal(false)}
+        getImageUrl={getImageUrl}
       />
     </SafeAreaView>
   );
@@ -735,6 +883,169 @@ const styles = StyleSheet.create({
   },
   sortChipTextActive: {
     color: '#FFFFFF',
+  },
+  popularCompareCheck: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 2,
+  },
+  compareToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginBottom: 16,
+  },
+  compareToggleActive: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  compareToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366F1',
+  },
+  compareToggleTextActive: {
+    color: '#fff',
+  },
+  compareOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(99, 102, 241, 0.05)',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    padding: 6,
+  },
+  compareOverlaySelected: {
+    borderColor: '#6366F1',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  compareCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#6366F1',
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compareCheckSelected: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  compareBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  compareBarProducts: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  compareBarItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 8,
+    gap: 8,
+  },
+  compareBarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+  },
+  compareBarName: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  compareBarRemove: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compareBarEmpty: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#D1D5DB',
+  },
+  compareBarEmptyText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  compareBarActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  compareButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#6366F1',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  compareButtonDisabled: {
+    backgroundColor: '#C7D2FE',
+  },
+  compareButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  compareCancelButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  compareCancelText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

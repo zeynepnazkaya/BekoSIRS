@@ -22,6 +22,8 @@ jest.mock('expo-router', () => ({
 jest.mock('../services', () => ({
     recommendationAPI: {
         getRecommendations: jest.fn(),
+        recordClick: jest.fn(),
+        dismissRecommendation: jest.fn(),
     },
     wishlistAPI: {
         getWishlist: jest.fn(),
@@ -42,6 +44,7 @@ jest.spyOn(Alert, 'alert');
 const mockRecommendationsData = {
     recommendations: [
         {
+            id: 101,
             product: {
                 id: 10,
                 name: 'Akıllı TV 4K',
@@ -49,11 +52,13 @@ const mockRecommendationsData = {
                 price: '25000',
                 stock: 5,
                 image: '/media/tv.jpg',
+                category_name: 'Elektronik',
             },
             score: 0.95,
             reason: 'Televizyon aramalarınıza göre',
         },
         {
+            id: 102,
             product: {
                 id: 11,
                 name: 'Robot Süpürge',
@@ -61,11 +66,20 @@ const mockRecommendationsData = {
                 price: '12000',
                 stock: 0,
                 image: null,
+                category_name: 'Küçük Ev Aletleri',
             },
             score: 0.65,
             reason: 'Süpürge incelemelerinize göre',
         }
-    ]
+    ],
+    ml_metrics: {
+        weights_used: {
+            ncf: 0.4,
+            content: 0.3,
+            popularity: 0.3,
+            user_tier: 'balanced',
+        },
+    },
 };
 
 const mockWishlistData = {
@@ -80,6 +94,8 @@ describe('RecommendationsScreen Tests', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         (recommendationAPI.getRecommendations as jest.Mock).mockResolvedValue({ data: mockRecommendationsData });
+        (recommendationAPI.recordClick as jest.Mock).mockResolvedValue({ data: { success: true } });
+        (recommendationAPI.dismissRecommendation as jest.Mock).mockResolvedValue({ data: { status: 'dismissed' } });
         (wishlistAPI.getWishlist as jest.Mock).mockResolvedValue({ data: mockWishlistData });
         (wishlistAPI.addItem as jest.Mock).mockResolvedValue({ data: { success: true } });
     });
@@ -105,6 +121,9 @@ describe('RecommendationsScreen Tests', () => {
             expect(getByText(/25\.000,00/)).toBeTruthy();
             expect(getByText('0.950')).toBeTruthy();
             expect(getByText('Stokta')).toBeTruthy();
+            expect(getByText('NCF: 0.38')).toBeTruthy();
+            expect(getByText('İçerik: 0.28')).toBeTruthy();
+            expect(getByText('Popülerlik: 0.28')).toBeTruthy();
 
             // Second Recommendation
             expect(getByText('Robot Süpürge')).toBeTruthy();
@@ -120,11 +139,11 @@ describe('RecommendationsScreen Tests', () => {
 
         // Because Robot Süpürge is already in wishlist, its button text should be different (wait for wishlist to load)
         await waitFor(() => {
-            expect(getByText('İstek Listesinde')).toBeTruthy(); // Robot Süpürge
-            expect(getAllByText('İstek Listesine Ekle').length).toBeGreaterThan(0); // TV
+            expect(getByText('Listede')).toBeTruthy(); // Robot Süpürge
+            expect(getAllByText('İstek Listesi').length).toBeGreaterThan(0); // TV
         });
 
-        const addBtns = getAllByText('İstek Listesine Ekle');
+        const addBtns = getAllByText('İstek Listesi');
         fireEvent.press(addBtns[0]); // Press the first valid btn (Akıllı TV)
 
         await waitFor(() => {
@@ -141,6 +160,32 @@ describe('RecommendationsScreen Tests', () => {
         fireEvent.press(getByText('Akıllı TV 4K'));
 
         expect(mockPush).toHaveBeenCalledWith('/product/10');
+    });
+
+    it('beğenmeme butonu dismiss API çağırır', async () => {
+        const { getByTestId, queryByText } = render(<RecommendationsScreen />);
+
+        await waitFor(() => expect(getByTestId('dismiss-feedback-101')).toBeTruthy());
+
+        fireEvent.press(getByTestId('dismiss-feedback-101'));
+
+        await waitFor(() => {
+            expect(recommendationAPI.dismissRecommendation).toHaveBeenCalledWith(101);
+            expect(queryByText('Akıllı TV 4K')).toBeNull();
+        });
+    });
+
+    it('kategori filtresi uygulandığında sadece o kategorideki öneriler görünür', async () => {
+        const { getByText, queryByText } = render(<RecommendationsScreen />);
+
+        await waitFor(() => expect(getByText('Elektronik')).toBeTruthy());
+
+        fireEvent.press(getByText('Elektronik'));
+
+        await waitFor(() => {
+            expect(getByText('Akıllı TV 4K')).toBeTruthy();
+            expect(queryByText('Robot Süpürge')).toBeNull();
+        });
     });
 
     it('renders empty state when no recommendations exist', async () => {

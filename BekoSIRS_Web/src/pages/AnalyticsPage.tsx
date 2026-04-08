@@ -279,13 +279,60 @@ const ForecastContent: React.FC<{ data: any }> = ({ data }) => {
     if (!data) return <EmptyState />;
 
     const topForecasts = data.top_forecasts || [];
+    const modelInfo = data.model_info;
 
     return (
         <div className="space-y-6">
+            {/* Model Info Banner */}
+            {modelInfo ? (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center gap-4">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
+                            <TrendingUp size={20} className="text-white" />
+                        </div>
+                        <div className="min-w-0">
+                            <p className="font-semibold text-blue-900 text-sm">AI Modeli Aktif</p>
+                            <p className="text-xs text-blue-700 truncate">{modelInfo.model_type}</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-6 shrink-0">
+                        <div className="text-center">
+                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Train R²</p>
+                            <p className="text-lg font-bold text-blue-900">{modelInfo.train_r2?.toFixed(3) ?? '—'}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Test R²</p>
+                            <p className="text-lg font-bold text-blue-900">{modelInfo.test_r2?.toFixed(3) ?? '—'}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Test MAE</p>
+                            <p className="text-lg font-bold text-blue-900">{modelInfo.test_mae?.toFixed(1) ?? '—'}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Örnekler</p>
+                            <p className="text-lg font-bold text-blue-900">{modelInfo.n_samples ?? '—'}</p>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex items-center gap-3">
+                    <RefreshCw size={18} className="text-yellow-600 shrink-0" />
+                    <p className="text-sm text-yellow-800">
+                        AI modeli henüz eğitilmedi — basit trend tahmini kullanılıyor.
+                        Modeli eğitmek için: <code className="font-mono bg-yellow-100 px-1 rounded">python manage.py train_sales_model</code>
+                    </p>
+                </div>
+            )}
+
+            {/* Forecast Table */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="font-bold text-gray-900">Satış Tahminleri (3 Aylık)</h3>
-                    <p className="text-sm text-gray-500 mt-1">AI destekli satış projeksiyonları</p>
+                    <h3 className="font-bold text-gray-900">Satış Tahminleri — Ridge Regresyon (12 Aylık Geçmiş Veri)</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                        {modelInfo
+                            ? `${modelInfo.model_type} · 95% güven aralığı: ±${modelInfo.ci_95_halfwidth ?? '—'} adet`
+                            : 'Trend tabanlı projeksiyon'}
+                    </p>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full">
@@ -294,10 +341,10 @@ const ForecastContent: React.FC<{ data: any }> = ({ data }) => {
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Ürün</th>
                                 <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Stok</th>
                                 <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Trend</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 1</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 2</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 3</th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Öneri</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 1 (alt–üst)</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 2 (alt–üst)</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 3 (alt–üst)</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Regresyon Önerisi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -325,8 +372,13 @@ const ForecastContent: React.FC<{ data: any }> = ({ data }) => {
                                         </span>
                                     </td>
                                     {item.forecasts?.slice(0, 3).map((f: any, fIdx: number) => (
-                                        <td key={fIdx} className="px-6 py-4 text-center font-bold text-gray-900">
-                                            {f.predicted_sales}
+                                        <td key={fIdx} className="px-6 py-4 text-center">
+                                            <span className="font-bold text-gray-900">{f.predicted_sales}</span>
+                                            {f.lower_bound != null && f.upper_bound != null && (
+                                                <span className="block text-xs text-gray-400 mt-0.5">
+                                                    {f.lower_bound}–{f.upper_bound}
+                                                </span>
+                                            )}
                                         </td>
                                     ))}
                                     <td className="px-6 py-4 text-sm text-gray-600">{item.recommendation}</td>

@@ -17,4 +17,5 @@ export {
     assignmentAPI,
     locationAPI,
     installmentAPI,
+    pushTokenAPI,
 } from './serviceModule';

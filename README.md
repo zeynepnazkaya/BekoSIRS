@@ -5,9 +5,14 @@
   <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" />
   <img src="https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white" />
   <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" />
 </p>
 
-Beko ürünleri için akıllı envanter yönetimi, ürün önerileri ve servis takip sistemi.
+<p align="center">
+  <img src="https://github.com/sutozremzi/BekoSIRS/actions/workflows/ci.yml/badge.svg" alt="CI" />
+</p>
+
+Beko ürünleri için akıllı envanter yönetimi, kişiselleştirilmiş ürün önerileri ve servis takip sistemi.
 
 ---
 
@@ -42,14 +47,22 @@ Beko ürünleri için akıllı envanter yönetimi, ürün önerileri ve servis t
 - 📢 Toplu bildirim gönderimi
 - 📊 Dashboard ve profesyonel istatistik grafikleri
 
+### 🤖 ML Tabanlı Öneri Sistemi
+Üç katmanlı hibrit öneri motoru (900+ satır):
+- **Neural Collaborative Filtering (NCF):** MLP sinir ağı (64→32→16 katman), kullanıcı-ürün etkileşimlerini öğrenir
+- **Content-Based Filtering:** TF-IDF + cosine similarity ile ürün içerik benzerliği
+- **Popularity-Based Fallback:** Yeni kullanıcılar için cold-start çözümü
+- **Ağırlıklı Ensemble:** NCF %40 + Content %40 + Popularity %20
+- Tıklama, görüntüleme, favoriler ve satın alım verileri ile otomatik model güncelleme
+
 ### 🖥️ Backend API (Django REST Framework)
 - 🔑 JWT Authentication + Token Refresh
-- 👤 Kullanıcı profil ve adres yönetimi
-- 📦 Ürün CRUD operasyonları
-- 🔔 Bildirim sistemi (fiyat düşüşü, garanti hatırlatma)
-- 🤖 Machine Learning öneri sistemi
-- 📧 E-posta servisi entegrasyonu
-- 🔒 Permission bazlı yetkilendirme
+- 👤 Kullanıcı profil ve adres yönetimi (KKTC'ye özel)
+- 📦 Ürün CRUD + Excel export/import
+- 🔔 Bildirim sistemi (fiyat düşüşü, garanti hatırlatma, gecikmiş taksit)
+- 🤖 Hibrit ML öneri sistemi (NCF + Content-Based + Popularity)
+- 🧾 Taksit planları ve gecikme tespiti
+- 🔒 4 rol tabanlı yetkilendirme (admin, seller, customer, delivery)
 
 ---
 
@@ -89,9 +102,10 @@ graph TB
 | **Backend** | Python 3.11+, Django 5.x, Django REST Framework |
 | **Web Panel** | React 18, TypeScript, Vite, Axios |
 | **Mobile App** | React Native, Expo, TypeScript |
-| **Database** | SQLite (dev) / PostgreSQL (prod) |
+| **Database** | Supabase PostgreSQL |
 | **Auth** | JWT (djangorestframework-simplejwt) |
-| **ML** | scikit-learn, pandas |
+| **ML** | scikit-learn, DeepFace (Face ID), pandas |
+| **CI/CD** | GitHub Actions (backend + web + mobile) |
 
 ---
 
@@ -127,8 +141,9 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # Bağımlılıkları yükle
 pip install -r requirements.txt
 
-# .env dosyasını oluştur
+# .env dosyasını oluştur ve düzenle
 cp .env.example .env
+# Gerekli değişkenler: SECRET_KEY, DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 
 # Migration'ları çalıştır
 python manage.py migrate
@@ -196,6 +211,12 @@ npx expo start
 
 ## 📚 API Dokümantasyonu
 
+### Swagger UI (İnteraktif)
+Sunucu çalışırken tarayıcıdan erişin:
+```
+http://localhost:8000/api/schema/swagger-ui/
+```
+
 ### Base URL
 ```
 http://localhost:8000/api/v1/
@@ -214,8 +235,11 @@ http://localhost:8000/api/v1/
 | `/service-requests/` | GET, POST | Servis talepleri |
 | `/notifications/` | GET, POST | Bildirimler |
 | `/deliveries/` | GET, POST | Teslimatlar |
+| `/recommendations/` | GET | Kişisel ML önerileri |
+| `/installment-plans/` | GET, POST | Taksit planları |
+| `/biometric/login/` | POST | Yüz tanıma ile giriş |
 
-Detaylı API dokümantasyonu: [BekoSIRS_api/README.md](BekoSIRS_api/README.md)
+Tam endpoint listesi için Swagger UI: `http://localhost:8000/api/schema/swagger-ui/`
 
 ---
 

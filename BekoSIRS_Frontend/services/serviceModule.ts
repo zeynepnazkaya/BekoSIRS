@@ -59,6 +59,10 @@ export const recommendationAPI = {
     generateRecommendations: () => api.post('api/v1/recommendations/generate/'),
     recordClick: (recommendationId: number) =>
         api.post(`api/v1/recommendations/${recommendationId}/click/`),
+    // Dismiss aksiyonu mevcut bir recommendation kaydini guncelledigi icin
+    // yeni istemcide PATCH kullaniyoruz; backend tarafinda POST geriye uyum icin acik.
+    dismissRecommendation: (recommendationId: number) =>
+        api.patch(`api/v1/recommendations/${recommendationId}/dismiss/`),
 };
 
 // ─────────────────────────────────────────
@@ -93,4 +97,11 @@ export const installmentAPI = {
     getMyPlans: () => api.get('api/v1/installment-plans/my-plans/'),
     getPlanInstallments: (planId: number) => api.get(`api/v1/installment-plans/${planId}/installments/`),
     confirmPayment: (installmentId: number) => api.post(`api/v1/installments/${installmentId}/customer-confirm/`),
+};
+
+// ─────────────────────────────────────────
+// 🔹 PUSH NOTIFICATION TOKEN
+// ─────────────────────────────────────────
+export const pushTokenAPI = {
+    savePushToken: (token: string) => api.patch('api/v1/users/push-token/', { push_token: token }),
 };

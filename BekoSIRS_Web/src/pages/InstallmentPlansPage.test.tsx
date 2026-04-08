@@ -246,7 +246,7 @@ describe('InstallmentPlansPage — Detay Görünümü', () => {
         renderDetailView();
         await waitFor(() => expect(screen.getByText('Test notu')).toBeInTheDocument());
 
-        fireEvent.click(screen.getByText('Düzenle'));
+        fireEvent.click(screen.getByTestId('notes-edit-btn'));
 
         expect(screen.getByTestId('notes-textarea')).toBeInTheDocument();
     });
@@ -256,7 +256,7 @@ describe('InstallmentPlansPage — Detay Görünümü', () => {
         renderDetailView();
         await waitFor(() => expect(screen.getByText('Test notu')).toBeInTheDocument());
 
-        fireEvent.click(screen.getByText('Düzenle'));
+        fireEvent.click(screen.getByTestId('notes-edit-btn'));
         const textarea = screen.getByTestId('notes-textarea');
         fireEvent.change(textarea, { target: { value: 'Yeni not' } });
         fireEvent.click(screen.getByTestId('save-notes-btn'));

@@ -1,23 +1,87 @@
 # products/ml_recommender.py
-"""
-Hybrid ML Recommendation System for BekoSIRS.
+# ==============================================================================
+# BEKOSIRS HİBRİT ÖNERİ SİSTEMİ (RECOMMENDATION ENGINE) TEKNİK REFERANS REHBERİ
+# ==============================================================================
+#
+# ADIM 1: GİRDİ VERİLERİ VE ETKİLEŞİM AĞIRLIKLARI. //?????????????bu puanlar neye göre veriliyor??????????????? puanlama ağırlıklaırnla oyna
 
-Architecture:
-  1. Neural Collaborative Filtering (NCF) — learns user-product embeddings via MLP
-  2. Content-Based Filtering — TF-IDF on product text features + cosine similarity
-  3. Popularity-Based Fallback — for cold-start users with no interaction history
-
-The system uses scikit-learn MLPRegressor as the neural component (avoids PyTorch
-dependency while providing genuine neural network learning).
-
-Models are persisted to disk (ml_models/) and loaded on startup.
-"""
-
+# ------------------------------------------------------------------------------
+# 1.1. Etkileşim Puanları (İki farklı yerde hesaplanır):
+#   - Satın Alma (Purchase): 5.0 Puan (En güçlü sinyal)
+#   - Yorum (Review): Verilen yıldız puanı kadar (Modelde), Canlı puanda sadece >3 yıldız olanlar.
+#   - İstek Listesi (Wishlist): 3.0 Puan
+#   - Görüntüleme (View):
+#       * NCF Eğitimi için: Görüntüleme sayısı kadar, maksimum 5 ile sınırlandırılır (Cap).
+#       * Canlı İçerik Puanı için: Görüntüleme sayısı kadar, maksimum 15 ile sınırlandırılır.
+#   - Reddedilen Öneriler (Dismissed): -3.0 Puan (Sadece canlı puanlamada eksi sinyal olarak).
+#
+# 1.2. Ürün Metin Verisi (Content):
+#   - İsim + Açıklama + Marka + (Kategori Adı x 3) birleştirilerek tek metin yapılır. 
+#   - Kategori isminin 3 kez yazılması, kategori ağırlığını yapay zeka gözünde artırır.
+#
+# ADIM 2: MODELLERİN EĞİTİLMESİ VE MATEMATİKSEL HESAPLAMALAR
+# ------------------------------------------------------------------------------
+# 2.1. Neural Collaborative Filtering (NCF) - Yapay Sinir Ağı:
+#   - Mimari: Scikit-learn MLPRegressor (128 -> 64 -> 32 -> 16 -> 1 nöronlu ReLU ağ).
+#   - Modele Giren 14 Özellik (Feature Vector):
+#       1. Kategori (Label Encoded)
+#       2. Fiyat / Ortalama Fiyat (Normalize Fiyat)
+#       3. Fiyat Sepeti (0-4 arası, Price Bucket)
+#       4. Kullanıcının verdiği/aldığı ortalama puan
+#       5. Kullanıcının toplam etkileşim sayısı
+#       6. Kullanıcının puanlarının standart sapması
+#       7. Kullanıcının etkileşime girdiği benzersiz ürün sayısı
+#       8. Ürünün sitedeki ortalama yıldız puanı
+#       9. Ürüne yapılan toplam yorum sayısı
+#      10. Ürünün toplam görüntülenme sayısı
+#      11. Ürünün toplam satın alınma sayısı
+#      12. Ürünün kaç kişinin istek listesinde olduğu
+#      13. Kullanıcı - Kategori Yakınlığı (Kullanıcı bu kategoriyle ne kadar ilgili?)
+#      14. Kullanıcının özel olarak bu ürünü kaç kez görüntülediği.
+#   - Tüm bu veriler MinMaxScaler ile 0-1 arasına çekilip ağa sokulur.
+#
+# 2.2. İçerik Tabanlı Filtreleme (Content-Based - TF-IDF & Kosinüs Benzerliği): //.  ??????????bag of words yoksa sadece tf idf?????  
+#   - TF-IDF Vectorizer en çok geçen 5000 kelime/ikili kelime grubunu (1-2 ngram) çıkarır.
+#   - Ürünler arası Kosinüs Benzerliği (Cosine Similarity) hesaplanır.
+#   - Kategori Bonusu: Eğer iki ürün aynı kategorideyse, benzerlik skorlarına statik +0.15 eklenir.
+#
+# 2.3. Popülerlik (Cold-Start / Yedek Sistem):
+#   - Formül: (Toplam Görüntüleme x 1) + (Toplam Yorum x 3) + (Toplam Satın Alma x 5)
+#
+# ADIM 3: CANLI PUANLAMA VE BONUS HESAPLAMALARI (Kullanıcı İstek Attığında)
+# ------------------------------------------------------------------------------
+# 1. Ham Skorların Çekilmesi ve Normalize Edilmesi:
+#   - NCF, Content ve Popülerlik modellerinden gelen skorlar kendi içlerindeki en yüksek değere (max) 
+#     bölünerek 0 ile 1 arasına (Normalize) çekilir.
+# 
+# 2. Hibrit Formül Ağırlıkları (WEIGHTS): //genel weightleri değiştir r2 değişiyor mu
+#   - Nihai Puan = (NCF Skoru x 0.5) + (Content Skoru x 0.3) + (Popülerlik Skoru x 0.2)
+#
+# 3. Anlık Bonuslar (Boosts):
+#   - Arama Bonusu (Search Boost): Kullanıcının son 5 araması ürünün TF-IDF metninde geçiyorsa,
+#     ürünün nihai puanına DİREKT +2.0 eklenir.
+#   - Fiyat Duyarlılığı Bonusu (Price Sensitivity Boost): Kullanıcının daha önce aldığı ve baktığı 
+#     ürünlerin ortalama fiyatı (avg_price) bulunur. Eğer aday ürünün fiyatı bu ortalamanın 
+#     %70'i ile %130'u arasındaysa, nihai puana +0.5 eklenir.
+#
+# ADIM 4: FİLTRELEME, DİVERSİFİKASYON VE KULLANICIYA SUNUM
+# ------------------------------------------------------------------------------
+# - Kesin Elemeler: Kullanıcının daha önce satın aldığı ürünler listeden tamamen çıkartılır.
+# - Kategori Kısıtlaması (Diversity):
+#   * Sistemin tek tip ürün önermemesi için aynı kategoriden en fazla 4 ürün alınır.
+#   * Sadece kullanıcının geçmişte etkileşime girdiği (tıkladığı, aldığı vb.) kategorilerdeki
+#     ürünler listeye dahil edilir. 
+#   * Eğer listede yeterli (Top-N) ürün kalmazsa, bu kısıtlama esnetilir ve diğer kategoriler açılır.
+# - Etiketleme (Reasoning): Ürünün puanı en çok nereden geldiyse veya hangi bonusu aldıysa,
+#   "Aramalarınıza göre", "Bütçenize uygun", "[Kategori] beğenenler bunu da beğendi" gibi dinamik metinler üretilir.
+# ==============================================================================    
+import math
 import os
 import time
 import threading
 import logging
 import warnings
+from datetime import date as dt_date, datetime as dt_datetime, time as dt_time, timedelta, timezone as dt_timezone
 
 import numpy as np
 import pandas as pd
@@ -45,6 +109,82 @@ CONTENT_MODEL_PATH = os.path.join(ML_MODELS_DIR, 'content_model.pkl')
 ENCODERS_PATH = os.path.join(ML_MODELS_DIR, 'encoders.pkl')
 METRICS_PATH = os.path.join(ML_MODELS_DIR, 'metrics.pkl')
 
+
+# ---------------------------------------------------------------------------
+# Zamana duyarli puan yardimcilari
+# ---------------------------------------------------------------------------
+def temporal_weight(interaction_date, half_life_days=30):
+    """
+    Zamana duyarli bir etkilesim icin ustel curume katsayisi hesaplar.
+
+    Args:
+        interaction_date: Etkilesimin olustugu tarih ya da zaman damgasi.
+        half_life_days: Katkinin yarilanacagi gun sayisi. Ornegin 30 ise
+            30 gunluk bir etkilesim 0.5 agirlik alir.
+
+    Yari omur tabanli ustel curume secildi cunku keskin bir esik koymak yerine
+    etkilesimi yumusak sekilde azaltir ve "her 30 gunde yariya iner" diye
+    urun ekiplerine kolayca anlatilabilir.
+    """
+    # Bazi eski kayitlarda zaman damgasi olmayabilir; gecerli bir sinyali
+    # tamamen silmek yerine tam agirlik vermek daha emniyetli bir varsayimdir.
+    if interaction_date is None:
+        return 1.0
+
+    normalized_date = interaction_date
+    if isinstance(normalized_date, dt_date) and not isinstance(normalized_date, dt_datetime):
+        # Satin alma kayitlari yalnizca gun tuttugu icin tum veri tiplerini
+        # ayni formulde kullanabilmek adina gun basina normalize ediyoruz.
+        normalized_date = dt_datetime.combine(normalized_date, dt_time.min)
+
+    if normalized_date.tzinfo is None:
+        # Tum tarihler ayni saat diliminde olmali; aksi halde ayni veri farkli
+        # ortamlarda farkli yari omur sonucuna gidebilir.
+        normalized_date = normalized_date.replace(tzinfo=dt_timezone.utc)
+
+    now = dt_datetime.now(dt_timezone.utc)
+    days_old = max(0, (now - normalized_date).days)
+
+    # Ustel curume formulu: exp(-ln(2) * gun_sayisi / yari_omur)
+    # Ornek: yari omur 30 ise 30 gunluk etkilesim 0.5, 60 gunluk etkilesim 0.25 olur.
+    return math.exp(-math.log(2) * days_old / half_life_days)
+
+
+# ---------------------------------------------------------------------------
+# Database Sync Helpers (for shared model storage via Supabase PostgreSQL)
+# ---------------------------------------------------------------------------
+def _save_model_to_db(file_path):
+    """Upload a local model file to the MLModelStore database table."""
+    try:
+        from .models import MLModelStore
+        file_name = os.path.basename(file_path)
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        MLModelStore.objects.update_or_create(
+            name=file_name,
+            defaults={'data': data}
+        )
+        logger.info("Synced %s to database (%.1f KB)", file_name, len(data) / 1024)
+    except Exception as e:
+        logger.warning("Could not sync %s to database: %s", file_path, e)
+
+
+def _load_model_from_db(file_path):
+    """Download a model file from the MLModelStore database table to local disk."""
+    try:
+        from .models import MLModelStore
+        file_name = os.path.basename(file_path)
+        record = MLModelStore.objects.filter(name=file_name).first()
+        if record and record.data:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'wb') as f:
+                f.write(bytes(record.data))
+            logger.info("Downloaded %s from database (%.1f KB)", file_name, len(record.data) / 1024)
+            return True
+        return False
+    except Exception as e:
+        logger.warning("Could not load %s from database: %s", file_path, e)
+        return False
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. NEURAL COLLABORATIVE FILTERING MODEL
@@ -253,11 +393,11 @@ class NCFModel:
         from .models import Product
 
         if verbose:
-            print("📊 Loading interaction data...")
+            print("Loading interaction data...")
 
         interactions_df = self._build_interaction_matrix()
         if interactions_df is None or len(interactions_df) < 5:
-            msg = "⚠️  Not enough interaction data to train NCF (need at least 5 interactions)"
+            msg = "Warning: not enough interaction data to train NCF (need at least 5 interactions)"
             if verbose:
                 print(msg)
             logger.warning(msg)
@@ -287,23 +427,23 @@ class NCFModel:
             X_test, y_test = X, y
 
         if verbose:
-            print(f"\n🧠 Training Neural Collaborative Filtering model...")
-            print(f"   Architecture: Input({X.shape[1]}) → 64 → 32 → 16 → 1")
+            print("\nTraining Neural Collaborative Filtering model...")
+            print(f"   Architecture: Input({X.shape[1]}) -> 128 -> 64 -> 32 -> 16 -> 1")
             print(f"   Training samples: {len(X_train)}, Test samples: {len(X_test)}")
 
-        # Build and train MLP — tuned for small-medium datasets
+        # Build and train MLP — tuned for small-to-large datasets
         self.model = MLPRegressor(
-            hidden_layer_sizes=(64, 32, 16),
+            hidden_layer_sizes=(128, 64, 32, 16),
             activation='relu',
             solver='adam',
             learning_rate='adaptive',
-            learning_rate_init=0.0005,
+            learning_rate_init=0.0003,
             max_iter=epochs,
-            batch_size=min(32, len(X_train)),
+            batch_size=min(64, len(X_train)),
             early_stopping=True if len(X_train) > 20 else False,
             validation_fraction=0.15 if len(X_train) > 20 else 0.0,
-            n_iter_no_change=30,
-            tol=1e-5,
+            n_iter_no_change=50,
+            tol=1e-6,
             random_state=42,
             verbose=False
         )
@@ -334,7 +474,7 @@ class NCFModel:
         }
 
         if verbose:
-            print(f"\n📈 Training Results:")
+            print("\nTraining Results:")
             print(f"   Epochs completed: {self.model.n_iter_}")
             print(f"   Final loss:       {self.training_metrics['final_loss']}")
             print(f"   Train R² score:   {train_score:.4f}")
@@ -480,7 +620,7 @@ class NCFModel:
         return scores
 
     def save(self, path=None):
-        """Save trained model to disk."""
+        """Save trained model to disk and to the shared database."""
         os.makedirs(ML_MODELS_DIR, exist_ok=True)
         joblib.dump(self.model, path or NCF_MODEL_PATH)
         joblib.dump({
@@ -491,11 +631,23 @@ class NCFModel:
             'metrics': self.training_metrics,
         }, ENCODERS_PATH)
         joblib.dump(self.training_metrics, METRICS_PATH)
-        logger.info("✅ NCF model saved to %s", ML_MODELS_DIR)
+        logger.info("NCF model saved to %s", ML_MODELS_DIR)
+
+        # Sync to shared database
+        for file_path in [path or NCF_MODEL_PATH, ENCODERS_PATH, METRICS_PATH]:
+            _save_model_to_db(file_path)
 
     def load(self, path=None):
-        """Load trained model from disk."""
+        """Load trained model from disk, falling back to database if local files are missing."""
         model_path = path or NCF_MODEL_PATH
+
+        # If local files are missing, try downloading from database
+        if not os.path.exists(model_path) or not os.path.exists(ENCODERS_PATH):
+            logger.info("Local NCF model files missing, trying database...")
+            for file_path in [model_path, ENCODERS_PATH, METRICS_PATH]:
+                _load_model_from_db(file_path)
+
+        # Now try loading from local files
         if not os.path.exists(model_path) or not os.path.exists(ENCODERS_PATH):
             return False
 
@@ -508,10 +660,10 @@ class NCFModel:
             self.scaler = encoders['scaler']
             self.training_metrics = encoders.get('metrics', {})
             self.is_trained = True
-            logger.info("✅ NCF model loaded from %s", model_path)
+            logger.info("NCF model loaded from %s", model_path)
             return True
         except Exception as e:
-            logger.error("❌ Failed to load NCF model: %s", e)
+            logger.error("Failed to load NCF model: %s", e)
             return False
 
 
@@ -542,7 +694,7 @@ class ContentBasedModel:
         from .models import Product
 
         if verbose:
-            print("\n📝 Training Content-Based model...")
+            print("\nTraining Content-Based model...")
 
         products = Product.objects.all().values(
             'id', 'name', 'description', 'brand', 'category__name', 'price'
@@ -551,7 +703,7 @@ class ContentBasedModel:
 
         if self.products_df.empty:
             if verbose:
-                print("   ⚠️  No products found in database")
+                print("   Warning: no products found in database")
             return False
 
         # Build composite text feature — weight category more heavily
@@ -596,7 +748,7 @@ class ContentBasedModel:
         self.is_trained = True
 
         if verbose:
-            print(f"   ✅ Built similarity matrix for {len(self.products_df)} products")
+            print(f"   Built similarity matrix for {len(self.products_df)} products")
             print(f"   TF-IDF features: {self.tfidf_matrix.shape[1]}")
 
         return True
@@ -642,17 +794,27 @@ class ContentBasedModel:
         return scores
 
     def save(self, path=None):
-        """Save content model to disk."""
+        """Save content model to disk and to the shared database."""
         os.makedirs(ML_MODELS_DIR, exist_ok=True)
+        save_path = path or CONTENT_MODEL_PATH
         joblib.dump({
             'similarity_matrix': self.similarity_matrix,
             'products_df': self.products_df,
             'indices': self.indices,
-        }, path or CONTENT_MODEL_PATH)
+        }, save_path)
+
+        # Sync to shared database
+        _save_model_to_db(save_path)
 
     def load(self, path=None):
-        """Load content model from disk."""
+        """Load content model from disk, falling back to database if local file is missing."""
         model_path = path or CONTENT_MODEL_PATH
+
+        # If local file is missing, try downloading from database
+        if not os.path.exists(model_path):
+            logger.info("Local content model missing, trying database...")
+            _load_model_from_db(model_path)
+
         if not os.path.exists(model_path):
             return False
         try:
@@ -663,7 +825,7 @@ class ContentBasedModel:
             self.is_trained = True
             return True
         except Exception as e:
-            logger.error("❌ Failed to load content model: %s", e)
+            logger.error("Failed to load content model: %s", e)
             return False
 
 
@@ -693,6 +855,18 @@ class HybridRecommender:
     WEIGHT_CONTENT = 0.3
     WEIGHT_POPULARITY = 0.2
 
+    # Yari omur degerleri etkilesim amacina gore ayarlanmistir:
+    # Satin alma sinyali uzun sure gecerliligini korur, goruntulemeler daha hizli eskir.
+    DECAY_PURCHASE_DAYS = 90
+    DECAY_WISHLIST_DAYS = 45
+    DECAY_REVIEW_DAYS = 60
+    DECAY_VIEW_DAYS = 30
+    DECAY_CLICK_DAYS = 45
+
+    # Yeni eklenen stokta urunler, gecmis populerlik sinyalleri birikmeden
+    # oneri listesine girebilsin diye gecici bir kesif boost'u alir.
+    NEW_PRODUCT_MAX_AGE_DAYS = 30
+
     CACHE_TTL = getattr(settings, 'CACHE_TTL_LONG', 7200)
 
     def __new__(cls):
@@ -705,26 +879,83 @@ class HybridRecommender:
         return cls._instance
 
     def _init_models(self):
-        """Initialize sub-models and try to load from disk."""
+        """Initialize sub-models, try to load, and auto-train in background if needed."""
         self.ncf = NCFModel()
         self.content = ContentBasedModel()
         self._loaded = False
+        self._training = False
+        self._last_runtime_weights = {}
 
-        # Try loading persisted models
+        # Try loading persisted models (checks local disk, then DB)
         ncf_loaded = self.ncf.load()
         content_loaded = self.content.load()
         self._loaded = ncf_loaded or content_loaded
 
         if self._loaded:
-            logger.info("✅ Recommender loaded saved models from disk")
+            logger.info("Recommender loaded saved models from disk")
+            if not getattr(settings, 'ML_DISABLE_BACKGROUND_JOBS', False):
+                # Aktif kullanicilarin onerileri arka planda onceden uretilir;
+                # test modunda arka plan DB yazimi beklenmediginden bu adim atlanir.
+                self._pregenerate_in_background()
         else:
-            logger.info("ℹ️  No saved models found — will train on first request or via management command")
+            logger.info("No saved models found; starting background training...")
+            if not getattr(settings, 'ML_DISABLE_BACKGROUND_JOBS', False):
+                self._train_in_background()
 
-    def train(self, epochs=50, verbose=True):
+    def _pregenerate_in_background(self):
+        """Pre-generate recommendations for active customers so pages load instantly."""
+        import threading
+        def _bg_pregen():
+            try:
+                from .models import Recommendation
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                # Only customers who don't already have recommendations
+                customers = User.objects.filter(role='customer')
+                for user in customers:
+                    has_recs = Recommendation.objects.filter(customer=user).exists()
+                    if not has_recs:
+                        try:
+                            recs = self.recommend(user, top_n=10, ignore_cache=True)
+                            if recs:
+                                for rec in recs:
+                                    Recommendation.objects.create(
+                                        customer=user,
+                                        product_id=rec['product_id'],
+                                        score=rec.get('score', 0),
+                                        reason=rec.get('reason', 'AI önerisi')
+                                    )
+                                logger.info("📦 Pre-generated recs for user %s", user.id)
+                        except Exception as e:
+                            logger.debug("Pre-gen failed for user %s: %s", user.id, e)
+                logger.info("Background pre-generation complete")
+            except Exception as e:
+                logger.warning("Background pre-generation failed: %s", e)
+        t = threading.Thread(target=_bg_pregen, daemon=True)
+        t.start()
+
+    def _train_in_background(self):
+        """Run training in a background thread so it never blocks requests."""
+        if self._training:
+            return
+        self._training = True
+        import threading
+        def _bg_train():
+            try:
+                self.train(epochs=300, verbose=False)
+                logger.info("Background training complete")
+            except Exception as e:
+                logger.warning("Background auto-train failed: %s", e)
+            finally:
+                self._training = False
+        t = threading.Thread(target=_bg_train, daemon=True)
+        t.start()
+
+    def train(self, epochs=300, verbose=True):
         """Train all sub-models and persist them."""
         if verbose:
             print("=" * 60)
-            print("🚀 BekoSIRS ML Recommendation System — Training Pipeline")
+            print("BekoSIRS ML Recommendation System - Training Pipeline")
             print("=" * 60)
 
         start_time = time.time()
@@ -745,9 +976,9 @@ class HybridRecommender:
 
         if verbose:
             print(f"\n{'=' * 60}")
-            print(f"✅ Training complete in {elapsed:.1f}s")
-            print(f"   NCF model:     {'✅ trained' if ncf_ok else '⚠️  skipped (not enough data)'}")
-            print(f"   Content model: {'✅ trained' if content_ok else '⚠️  skipped (no products)'}")
+            print(f"Training complete in {elapsed:.1f}s")
+            print(f"   NCF model:     {'trained' if ncf_ok else 'skipped (not enough data)'}")
+            print(f"   Content model: {'trained' if content_ok else 'skipped (no products)'}")
             print(f"   Models saved:  {ML_MODELS_DIR}")
             print(f"{'=' * 60}")
 
@@ -756,11 +987,20 @@ class HybridRecommender:
 
     def recommend(self, user, top_n=10, ignore_cache=False, exclude_ids=None):
         """
-        Main recommendation entry point.
-        
-        Returns list of dicts: [{'product': Product, 'product_id': int, 'score': float, 'reason': str}]
+        Kullanici icin hibrit oneri listesini uretir.
+
+        Args:
+            user: Oneri alinacak kullanici nesnesi.
+            top_n: Donulecek en yuksek skorlu urun sayisi.
+            ignore_cache: True ise etkilesim cache'i yeniden hesaplanir.
+            exclude_ids: Listeye girmemesi gereken ek urun kimlikleri.
+
+        Sahip olunan, dismiss edilen ve disaridan gelen exclude listeleri tek
+        havuzda birlestirilir; bu yontem aday filtrelemeyi tek noktadan ve
+        tutarli sekilde yonetmeyi kolaylastirir.
         """
-        # Auto-train content model if not loaded
+        # Icerik modeli bellekte hazir degilse once egitiyoruz; boylece sistem
+        # bos liste donmek yerine en azindan icerik tabanli aday uretebilir.
         if not self.content.is_trained:
             self.content.train(verbose=False)
             if self.content.is_trained:
@@ -771,17 +1011,30 @@ class HybridRecommender:
 
         exclude_ids = set(exclude_ids or [])
 
-        # Gather user's interaction history
+        # Kullanici sinyalleri ve dislanacak urunler once tek yerde toplanir;
+        # daha sonra her puan kaynagi ayni aday havuzu uzerinde calisir.
         user_interactions = self._get_user_interactions(user, ignore_cache)
         owned_product_ids = self._get_owned_product_ids(user)
-        exclude_ids.update(owned_product_ids)  # Don't recommend already purchased items
+        dismissed_product_ids = self._get_dismissed_product_ids(user)
+        # Satin alinmis urunler tekrar onerilmez; bu akista "zaten sahip" bilgisi
+        # kesin bir engel oldugu icin puan kirmak yerine dogrudan exclude edilir.
+        exclude_ids.update(owned_product_ids)
+        # Dismiss sinyali "bunu tekrar gosterme" anlamina gelir; bu nedenle
+        # yumusak negatif skor yerine sert exclude olarak uygulanir.
+        exclude_ids.update(dismissed_product_ids)
+
+        # Adaptif agirliklar kullanicinin etkilesim derinligine gore secilir.
+        # Soguk baslangicta populerlik daha guvenilirken aktif profilde NCF agir basar.
+        weight_details = self._build_weight_details(user_interactions)
+        self._last_runtime_weights[user.id] = weight_details
 
         final_scores = {}
-        reasons = {}
+        reasons = {}  # (kaynak_tipi, ek_bilgi) ikililerini saklar.
 
         all_product_ids = self.content.products_df['id'].tolist()
 
-        # ── 1. NCF Scores ──
+        # 1. NCF skorlari
+        # NCF skorlari yeterli etkilesimi olan kullanicida ana kisilestirme sinyalidir.
         if self.ncf.is_trained:
             ncf_scores = self.ncf.predict_for_user(
                 user.id, all_product_ids, self.content.products_df
@@ -790,11 +1043,14 @@ class HybridRecommender:
                 max_ncf = max(ncf_scores.values()) or 1
                 for pid, score in ncf_scores.items():
                     if pid not in exclude_ids:
-                        normalized = (score / max_ncf) * self.WEIGHT_NCF
+                        # Normalize edilen katki = (aday_skoru / en_yuksek_skor) * ncf_agirligi
+                        # Ornek: 0.8 / 1.0 * 0.6 = 0.48. Bu, farkli model olceklerini ayni banda getirir.
+                        normalized = (score / max_ncf) * weight_details['ncf']
                         final_scores[pid] = normalized
-                        reasons[pid] = "ML modeli tarafından önerildi"
+                        reasons[pid] = ('ncf', None)
 
-        # ── 2. Content-Based Scores ──
+        # 2. Icerik tabanli skorlar
+        # Icerik tabanli skorlar benzer urun semantiklerini kullanarak ilgiyi genisletir.
         if self.content.is_trained and user_interactions:
             content_scores = self.content.get_user_content_scores(
                 user_interactions, exclude_ids
@@ -803,47 +1059,139 @@ class HybridRecommender:
                 max_content = max(content_scores.values()) or 1
                 for pid, score in content_scores.items():
                     if pid not in exclude_ids:
-                        normalized = (score / max_content) * self.WEIGHT_CONTENT
+                        # Icerik katkisi da ayni olcege cekilir.
+                        # Ornek: 0.5 / 0.5 * 0.3 = 0.3. En iyi icerik adayi agirligin tamamini alir.
+                        normalized = (score / max_content) * weight_details['content']
                         final_scores[pid] = final_scores.get(pid, 0) + normalized
                         if pid not in reasons:
-                            reasons[pid] = "İlgi alanlarınıza göre"
+                            reasons[pid] = ('content', None)
 
-        # ── 3. Popularity Scores (cold-start fallback) ──
+        # 3. Populerlik skorlari
         popularity_scores = self._get_popularity_scores()
         if popularity_scores:
+            # Populerlik katmani soguk baslangicta emniyet agirligi olarak calisir.
             max_pop = max(popularity_scores.values()) or 1
             for pid, score in popularity_scores.items():
                 if pid not in exclude_ids:
-                    normalized = (score / max_pop) * self.WEIGHT_POPULARITY
+                    # Populerlik de 0-1 bandina cekilip agirlikla carpiliyor.
+                    # Ornek: 12 / 15 * 0.8 = 0.64. Boylesi yeni kullanicida listeyi dengeler.
+                    normalized = (score / max_pop) * weight_details['popularity']
                     final_scores[pid] = final_scores.get(pid, 0) + normalized
                     if pid not in reasons:
-                        reasons[pid] = "Popüler ürün"
+                        reasons[pid] = ('popular', None)
 
-        # ── 4. Search History Boost ──
+        # 4. Arama gecmisi bonusu
         search_boosts = self._get_search_boosts(user)
+        # Arama terimleri acik niyet sinyali oldugu icin agirliklara dogrudan ek bonus veriyoruz.
         for pid, boost in search_boosts.items():
             if pid not in exclude_ids:
                 final_scores[pid] = final_scores.get(pid, 0) + boost
-                reasons[pid] = "Aramalarınıza göre"
+                reasons[pid] = ('search', None)
 
-        # ── 5. Price Sensitivity Boost ──
+        # 5. Fiyat duyarliligi bonusu
         price_boosts = self._get_price_sensitivity_boosts(user)
         for pid, boost in price_boosts.items():
             if pid not in exclude_ids and pid in final_scores:
+                # Fiyat araligi uyumu yalnizca mevcut adaylara eklenir.
+                # Ornek: mevcut skor 0.62 ise 0.1 bonus sonrasi 0.72 olur.
                 final_scores[pid] += boost
-                if boost > 0.1 and reasons.get(pid) not in ("Aramalarınıza göre",):
-                    reasons[pid] = "Fiyat aralığınıza uygun"
+                if boost > 0.1 and reasons.get(pid, (None,))[0] not in ('search',):
+                    reasons[pid] = ('price', None)
 
-        # ── Format and return ──
+        # 6. Yeni urun kesif bonusu
+        for pid, boost in self._get_new_product_boost().items():
+            if pid not in exclude_ids:
+                # Kucuk sabit bonus secildi; ornegin 0.4 ekleme yeni urunu gorunur
+                # kilar ama halihazirda cok guclu bir adayi tamamen bastirmaz.
+                final_scores[pid] = final_scores.get(pid, 0) + boost
+                if boost > 0 and reasons.get(pid, (None,))[0] not in ('search', 'price'):
+                    reasons[pid] = ('new', None)
+
+        # Sonucu bicimlendir ve dondur
+        # Tum kaynaklardan gelen puanlar birlestirilir ve son sirali API cevabina cevrilir.
         return self._format_results(final_scores, reasons, top_n, exclude_ids, user=user)
 
-    # ───────────────────────────────────────────────────────────────────────
-    # Helper Methods
-    # ───────────────────────────────────────────────────────────────────────
+    # -----------------------------------------------------------------------
+    # Yardimci metodlar
+    # -----------------------------------------------------------------------
+
+    def _count_meaningful_interactions(self, user_interactions):
+        """
+        Kullanici seviyesini belirlemek icin pozitif etkilesimleri sayar.
+
+        Sifir ve negatif degerleri bilerek dahil etmiyoruz; boylece dismiss gibi
+        sinyaller soguk baslangic tespitini yapay olarak sisirmez.
+        """
+        return sum(1 for score in user_interactions.values() if score > 0)
+
+    def _get_user_tier(self, user_interactions):
+        """Etkilesim derinligini okunabilir bir oneri seviyesine cevirir."""
+        interaction_count = self._count_meaningful_interactions(user_interactions)
+        if interaction_count == 0:
+            return 'cold_start'
+        if interaction_count < 5:
+            return 'light'
+        if interaction_count < 20:
+            return 'balanced'
+        return 'active'
+
+    def _get_adaptive_weights(self, user_interactions):
+        """
+        Kullanici etkilesim derinligine gore hibrit agirliklari secer.
+
+        Args:
+            user_interactions: {product_id: skor} biciminde pozitif etkilesim haritasi.
+
+        Returns:
+            (ncf, content, popularity) agirlik uclusu.
+
+        Bu esik yapisi secildi cunku soguk baslangicta populerlik daha guvenilir,
+        etkilesim biriktikce de NCF kisilestirme kalitesini daha iyi tasir.
+        """
+        interaction_count = self._count_meaningful_interactions(user_interactions)
+
+        # 0 etkilesim: isbirlikci filtreleme guvenilmezdir, bu yuzden populerlik %80'e cikar.
+        if interaction_count == 0:
+            return (0.0, 0.2, 0.8)
+        # 1-4 etkilesim: ilk tercihler gorunur, ama populerlik hala ana emniyet agidir.
+        if interaction_count < 5:
+            return (0.2, 0.3, 0.5)
+        # 5-19 etkilesim: icerik ve NCF birlikte calisir, dengeli faz budur.
+        if interaction_count < 20:
+            return (0.4, 0.3, 0.3)
+        # 20+ etkilesim: olgun profil, NCF %60 ile ana surucu haline gelir.
+        return (0.6, 0.3, 0.1)
+
+    def _build_weight_details(self, user_interactions):
+        """Tek kullanici icin API'ye hazir adaptif agirlik sozlugunu kurar."""
+        ncf_weight, content_weight, popularity_weight = self._get_adaptive_weights(user_interactions)
+        return {
+            'ncf': ncf_weight,
+            'content': content_weight,
+            'popularity': popularity_weight,
+            'user_tier': self._get_user_tier(user_interactions),
+            'interaction_count': self._count_meaningful_interactions(user_interactions),
+        }
+
+    def get_runtime_weight_details(self, user, ignore_cache=False):
+        """
+        Verilen kullanici icin calisma anindaki adaptif agirliklari dondurur.
+
+        View katmani cache'ten donse bile ayni helper'i cagirdiginda frontend,
+        skorlama motorunun kullandigi agirliklarla birebir ayni payload'u alir.
+        """
+        cached_details = self._last_runtime_weights.get(user.id)
+        if cached_details is not None and not ignore_cache:
+            return cached_details
+
+        user_interactions = self._get_user_interactions(user, ignore_cache=ignore_cache)
+        weight_details = self._build_weight_details(user_interactions)
+        self._last_runtime_weights[user.id] = weight_details
+        return weight_details
 
     def _get_user_interactions(self, user, ignore_cache=False):
-        """Gather user interaction scores: {product_id: weight}."""
-        from .models import ProductOwnership, Review, WishlistItem, ViewHistory
+        """Kullanici etkilesim skorlarini {product_id: agirlik} biciminde toplar."""
+        from .models import ProductOwnership, Review, WishlistItem, ViewHistory, Recommendation
 
         cache_key = f'ml_user_interactions_{user.id}'
         if not ignore_cache:
@@ -853,38 +1201,92 @@ class HybridRecommender:
 
         interactions = {}
 
-        # Purchases (weight=5.0)
-        for pid in ProductOwnership.objects.filter(
+        # Satin almalar kalici tercih sinyalidir; bu nedenle yari omurleri daha uzundur.
+        for ownership in ProductOwnership.objects.filter(
             customer=user
-        ).values_list('product_id', flat=True):
-            interactions[pid] = interactions.get(pid, 0) + 5.0
+        ).values('product_id', 'purchase_date'):
+            decay = temporal_weight(
+                ownership['purchase_date'],
+                half_life_days=self.DECAY_PURCHASE_DAYS,
+            )
+            interactions[ownership['product_id']] = (
+                interactions.get(ownership['product_id'], 0) + (5.0 * decay)
+            )
 
-        # Reviews with rating > 3 (weight=rating)
+        # Pozitif yorum acik memnuniyet bildirir; bu nedenle etkisi view'dan daha uzun surer.
         for r in Review.objects.filter(
             customer=user, rating__gt=3
-        ).values('product_id', 'rating'):
-            interactions[r['product_id']] = interactions.get(r['product_id'], 0) + float(r['rating'])
+        ).values('product_id', 'rating', 'created_at'):
+            decay = temporal_weight(
+                r['created_at'],
+                half_life_days=self.DECAY_REVIEW_DAYS,
+            )
+            interactions[r['product_id']] = (
+                interactions.get(r['product_id'], 0) + (float(r['rating']) * decay)
+            )
 
-        # Wishlist items (weight=3.0)
-        for pid in WishlistItem.objects.filter(
+        # Istek listesi satin alma kadar kalici degildir ama rastgele gezinmeden
+        # daha guclu sinyal verir; bu yuzden orta seviye yari omur kullanilir.
+        for item in WishlistItem.objects.filter(
             wishlist__customer=user
-        ).values_list('product_id', flat=True):
-            interactions[pid] = interactions.get(pid, 0) + 3.0
+        ).values('product_id', 'added_at'):
+            decay = temporal_weight(
+                item['added_at'],
+                half_life_days=self.DECAY_WISHLIST_DAYS,
+            )
+            interactions[item['product_id']] = (
+                interactions.get(item['product_id'], 0) + (3.0 * decay)
+            )
 
-        # ALL views weighted by view_count (capped at 15 to avoid one product dominating)
-        for vh in ViewHistory.objects.filter(customer=user).values('product_id', 'view_count'):
-            weight = min(vh['view_count'], 15)  # Cap at 15
-            interactions[vh['product_id']] = interactions.get(vh['product_id'], 0) + weight
+        # Goruntuleme kisa vadeli niyeti yansitir; bu nedenle en hizli bunlar curur.
+        # view_count 15 ile sinirlanir ki tek sayfayi yenilemek tum siralamayi ezmesin.
+        for vh in ViewHistory.objects.filter(customer=user).values('product_id', 'view_count', 'viewed_at'):
+            weight = min(vh['view_count'], 15)
+            decay = temporal_weight(
+                vh['viewed_at'],
+                half_life_days=self.DECAY_VIEW_DAYS,
+            )
+            interactions[vh['product_id']] = interactions.get(vh['product_id'], 0) + (weight * decay)
+
+        # Tiklanan oneriler siradan view'dan daha gucludur cunku kullanici
+        # kart uzerinden bilincli bir aksiyon almistir.
+        for rec in Recommendation.objects.filter(
+            customer=user, clicked=True
+        ).values('product_id', 'created_at'):
+            decay = temporal_weight(
+                rec['created_at'],
+                half_life_days=self.DECAY_CLICK_DAYS,
+            )
+            interactions[rec['product_id']] = interactions.get(rec['product_id'], 0) + (2.0 * decay)
 
         cache.set(cache_key, interactions, 300)
         return interactions
 
     def _get_owned_product_ids(self, user):
-        """Get IDs of products the user already owns."""
+        """Kullanicinin zaten sahip oldugu urun kimliklerini dondurur."""
         from .models import ProductOwnership
         return set(
             ProductOwnership.objects.filter(
                 customer=user
+            ).values_list('product_id', flat=True)
+        )
+
+    def _get_dismissed_product_ids(self, user):
+        """
+        Kullanicinin acikca reddettigi oneri urun kimliklerini dondurur.
+
+        Args:
+            user: Dismiss tercihleri okunacak kullanici.
+
+        Dismiss sinyali sert exclude kabul edilir cunku arayuzdeki anlami
+        "bunu bir daha gosterme"dir; dusuk ilgi tahmini kadar yumusak degildir.
+        """
+        from .models import Recommendation
+
+        return set(
+            Recommendation.objects.filter(
+                customer=user,
+                dismissed=True,
             ).values_list('product_id', flat=True)
         )
 
@@ -928,6 +1330,47 @@ class HybridRecommender:
 
         cache.set(cache_key, scores, 1800)  # Cache for 30 min
         return scores
+
+    def _get_new_product_boost(self):
+        """
+        Son donemde eklenen stoktaki urunler icin kisa omurlu bonus dondurur.
+
+        Bu helper parametre almaz; dogrudan canli katalogdaki `created_at` ve
+        stok bilgisini okur. Bu yontem secildi cunku populerlik odakli sistemler
+        sifir etkilesimle baslayan yeni urunleri geri plana iter, burada ise
+        sinirli bir kesif bonusu ile o bosluk kapatilir.
+        """
+        from .models import Product
+
+        boosts = {}
+        now = dt_datetime.now(dt_timezone.utc)
+
+        # Yalnizca stokta olan ve son 30 gunde eklenen urunleri aliyoruz; stok
+        # filtresi kullanicinin hemen satin alamayacagi urunleri one cikarmayi engeller.
+        recent_products = Product.objects.filter(
+            created_at__gte=now - timedelta(days=self.NEW_PRODUCT_MAX_AGE_DAYS),
+            stock__gt=0,
+        ).values('id', 'created_at')
+
+        for product in recent_products:
+            created_at = product['created_at']
+            if created_at is None:
+                continue
+
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=dt_timezone.utc)
+
+            days_old = max(0, (now - created_at).days)
+            # Kaba kovalar secildi cunku urun ekibine anlatmasi kolaydir:
+            # 3 gunluk urun 0.4, 10 gunluk urun 0.25, 20 gunluk urun 0.1 bonus alir.
+            if days_old <= 7:
+                boosts[product['id']] = 0.4
+            elif days_old <= 14:
+                boosts[product['id']] = 0.25
+            elif days_old <= self.NEW_PRODUCT_MAX_AGE_DAYS:
+                boosts[product['id']] = 0.1
+
+        return boosts
 
     def _get_search_boosts(self, user):
         """Boost products matching user's recent search terms."""
@@ -983,6 +1426,119 @@ class HybridRecommender:
 
         return boosts
 
+    def _normalize_metric_input(self, recommendation):
+        """
+        Oneri payload'unu metrik hesaplamaya uygun basit alanlara indirger.
+
+        Recommendation ekrani bazen model nesnesi, bazen serilestirilmis sozluk
+        alabilir. Bu helper iki bicimi de ayni yapida duzlestirerek cesitlilik ve
+        kapsama hesaplarinin tek kod yolundan cikmasini saglar.
+        """
+        product_id = None
+        category_name = None
+        score_value = 0.0
+        price_value = None
+
+        if isinstance(recommendation, dict):
+            product_data = recommendation.get('product') or {}
+            category_data = product_data.get('category') or {}
+            product_id = recommendation.get('product_id') or product_data.get('id')
+            category_name = product_data.get('category_name') or category_data.get('name')
+            score_value = recommendation.get('score', 0.0) or 0.0
+            raw_price = product_data.get('price')
+        else:
+            product = getattr(recommendation, 'product', None)
+            category = getattr(product, 'category', None)
+            product_id = getattr(recommendation, 'product_id', None) or getattr(product, 'id', None)
+            category_name = getattr(category, 'name', None)
+            score_value = getattr(recommendation, 'score', 0.0) or 0.0
+            raw_price = getattr(product, 'price', None)
+
+        try:
+            score_value = float(score_value)
+        except (TypeError, ValueError):
+            score_value = 0.0
+
+        try:
+            price_value = float(raw_price) if raw_price not in (None, '') else None
+        except (TypeError, ValueError):
+            price_value = None
+
+        return {
+            'product_id': product_id,
+            'category_name': str(category_name).strip() if category_name else None,
+            'score': score_value,
+            'price': price_value,
+        }
+
+    def _compute_advanced_metrics(self, recommendations_list, all_products_count=None):
+        """
+        Calisma anindaki oneri listesi icin kalite metrikleri hesaplar.
+
+        Args:
+            recommendations_list: API'ye donulen sirali oneri listesi.
+            all_products_count: Toplam katalog boyutu. Verilmezse veritabanindan okunur.
+
+        Bu yontem secildi cunku cesitlilik ve kapsama gibi metrikler egitim
+        verisinden degil, kullanicinin gercekte gordugu son listeden anlam kazanir.
+        """
+        normalized_items = [
+            self._normalize_metric_input(recommendation)
+            for recommendation in recommendations_list
+        ]
+
+        if all_products_count is None:
+            from .models import Product
+
+            # Katalog kapsamasini canli katalogla hesapliyoruz; sadece en son
+            # model snapshot'ina bakmak is kurallarina gore eski sayi verebilir.
+            all_products_count = Product.objects.count()
+            if all_products_count == 0 and self.content.products_df is not None and not self.content.products_df.empty:
+                all_products_count = len(self.content.products_df)
+
+        categories = [
+            item['category_name']
+            for item in normalized_items
+            if item['category_name']
+        ]
+        unique_categories = len(set(categories))
+        # Cesitlilik = benzersiz kategori / liste uzunlugu.
+        # Ornek: 2 kategori ve 4 urun varsa skor 0.5 olur.
+        diversity_score = unique_categories / max(len(normalized_items), 1)
+
+        unique_recommended = len({
+            item['product_id']
+            for item in normalized_items
+            if item['product_id'] is not None
+        })
+        # Katalog kapsama = benzersiz onerilen urun / toplam katalog.
+        # Ornek: 2 urun / 4 urun = 0.5 kapsama.
+        catalog_coverage = unique_recommended / max(int(all_products_count or 0), 1)
+
+        scores = [item['score'] for item in normalized_items]
+        # Ortalama skor listenin genel gucunu ozetler.
+        # Ornek: [0.9, 0.6] icin ortalama 0.75 olur.
+        avg_recommendation_score = float(np.mean(scores)) if scores else 0.0
+
+        prices = [item['price'] for item in normalized_items if item['price'] is not None]
+        # Fiyat varyansi liste ici yayilimi olcer.
+        # Ornek: [100, 200] icin varyans 2500 olur; daha yuksek deger farkli bantlari isaret eder.
+        price_variance_in_list = float(np.var(prices)) if prices else 0.0
+
+        return {
+            'diversity_score': round(diversity_score, 3),
+            'catalog_coverage': round(catalog_coverage, 3),
+            'avg_recommendation_score': round(avg_recommendation_score, 3),
+            'price_variance_in_list': round(price_variance_in_list, 3),
+        }
+
+    def get_advanced_metrics(self, recommendations_list, all_products_count=None):
+        """Public wrapper so views can attach runtime list metrics to ml_metrics."""
+        return self._compute_advanced_metrics(
+            recommendations_list,
+            all_products_count=all_products_count,
+        )
+
     def _format_results(self, scores, reasons, top_n, exclude_ids, user=None):
         """Sort and format final recommendation results with category diversity."""
         from .models import Product, ViewHistory, Review, ProductOwnership, WishlistItem
@@ -996,12 +1552,20 @@ class HybridRecommender:
 
         # ── Get categories the user has actually interacted with ──
         user_categories = set()
+        # Build a map of category -> most viewed product name (for rich reasons)
+        category_top_product = {}  # {category_name: product_name}
         if user:
-            # From views
-            view_cats = ViewHistory.objects.filter(
+            # From views — get the most viewed product per category
+            view_data = ViewHistory.objects.filter(
                 customer=user
-            ).values_list('product__category__name', flat=True).distinct()
-            user_categories.update(str(c).strip() for c in view_cats if c)
+            ).select_related('product__category').order_by('-view_count')
+            for vh in view_data:
+                cat_name = vh.product.category.name if vh.product.category else None
+                if cat_name:
+                    cat_name = str(cat_name).strip()
+                    user_categories.add(cat_name)
+                    if cat_name not in category_top_product:
+                        category_top_product[cat_name] = vh.product.name
             
             # From reviews
             review_cats = Review.objects.filter(
@@ -1020,6 +1584,48 @@ class HybridRecommender:
                 wishlist__customer=user
             ).values_list('product__category__name', flat=True).distinct()
             user_categories.update(str(c).strip() for c in wishlist_cats if c)
+
+        def _build_reason(product, reason_tuple):
+            """Build a specific, user-friendly reason string."""
+            source = reason_tuple[0] if reason_tuple else 'default'
+            cat_name = product.category.name if product.category else None
+            
+            # Find the user's top viewed product in this category
+            top_viewed = category_top_product.get(cat_name) if cat_name else None
+            
+            if source == 'search':
+                return f"Aramalarınıza göre önerildi"
+            elif source == 'price':
+                if cat_name:
+                    return f"{cat_name} — bütçenize uygun"
+                return "Fiyat aralığınıza uygun"
+            elif source == 'content':
+                if top_viewed:
+                    # Truncate long product names
+                    short_name = top_viewed[:30] + ('…' if len(top_viewed) > 30 else '')
+                    return f"\"{short_name}\" incelemenize benzer"
+                elif cat_name:
+                    return f"{cat_name} ilgi alanınıza göre"
+                return "Görüntüleme geçmişinize göre"
+            elif source == 'ncf':
+                if top_viewed:
+                    short_name = top_viewed[:30] + ('…' if len(top_viewed) > 30 else '')
+                    return f"\"{short_name}\" beğenenler bunu da beğendi"
+                elif cat_name:
+                    return f"{cat_name} kategorisinde sizin için seçildi"
+                return "Kullanıcı davranışlarınıza göre"
+            elif source == 'popular':
+                if cat_name:
+                    return f"{cat_name} kategorisinde popüler"
+                return "Çok tercih edilen ürün"
+            elif source == 'new':
+                if cat_name:
+                    return f"Yeni eklenen {cat_name} ürünü"
+                return "Yeni gelen ürün"
+            else:
+                if cat_name:
+                    return f"{cat_name} — sizin için seçildi"
+                return "Sizin için seçildi"
 
         # ── Category diversity: max 4 items per category, only from user's categories ──
         MAX_PER_CATEGORY = 4
@@ -1042,11 +1648,12 @@ class HybridRecommender:
                     continue
 
                 if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
+                    reason_tuple = reasons.get(pid, ('default', None))
                     diverse_items.append({
                         'product': product,
                         'product_id': p_id,
                         'score': round(float(score), 4),
-                        'reason': reasons.get(pid, 'Sizin için seçildi'),
+                        'reason': _build_reason(product, reason_tuple),
                     })
                     category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
                     added_pids.add(p_id)
@@ -1067,11 +1674,12 @@ class HybridRecommender:
                     cat_name = str(product.category.name).strip() if product.category else 'Other'
 
                     if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
+                        reason_tuple = reasons.get(pid, ('default', None))
                         diverse_items.append({
                             'product': product,
                             'product_id': p_id,
                             'score': round(float(score), 4),
-                            'reason': reasons.get(pid, 'Sizin için seçildi (Yeni Kategori)'),
+                            'reason': _build_reason(product, reason_tuple),
                         })
                         category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
                         added_pids.add(p_id)
@@ -1079,10 +1687,19 @@ class HybridRecommender:
                     continue
 
         # ── Format and return ──
-        logger.info(f"📊 Recommending for user {user.id if user else 'Guest'}: {len(filtered)} candidates -> Filtered to {len(diverse_items)}")
+        logger.info(
+            "Recommending for user %s: %s candidates -> Filtered to %s",
+            user.id if user else 'Guest',
+            len(filtered),
+            len(diverse_items),
+        )
         
         if not diverse_items and sorted_items:
-             logger.warning(f"⚠️  All {len(sorted_items)} candidates were filtered out for user {user.id if user else 'Guest'}")
+             logger.warning(
+                 "All %s candidates were filtered out for user %s",
+                 len(sorted_items),
+                 user.id if user else 'Guest',
+             )
              # Check one for debug
              pid, score = sorted_items[0]
              try:
@@ -1120,6 +1737,47 @@ class HybridRecommender:
     @classmethod
     def get_instance(cls):
         return cls()
+
+    def _get_model_age_hours(self):
+        """Return the age of the saved model in hours, or None if unknown."""
+        if os.path.exists(METRICS_PATH):
+            try:
+                mtime = os.path.getmtime(METRICS_PATH)
+                age_seconds = time.time() - mtime
+                return age_seconds / 3600
+            except OSError:
+                pass
+        return None
+
+    def retrain_if_stale(self):
+        """Retrain models if they are older than the configured interval."""
+        retrain_interval = getattr(settings, 'ML_RETRAIN_INTERVAL_HOURS', 6)
+        age_hours = self._get_model_age_hours()
+
+        if age_hours is not None and age_hours < retrain_interval:
+            logger.info(
+                "ML model is %.1f hours old (threshold: %d hours) - skipping retrain",
+                age_hours, retrain_interval
+            )
+            return False
+
+        logger.info(
+            "ML model is %s - starting retraining...",
+            f"{age_hours:.1f} hours old" if age_hours is not None else "not found"
+        )
+
+        try:
+            success = self.train(epochs=300, verbose=False)
+            if success:
+                logger.info("Periodic retraining complete")
+                # Invalidate caches so new recommendations use fresh model
+                self.invalidate_cache()
+            else:
+                logger.warning("Periodic retraining did not produce a model (insufficient data?)")
+            return success
+        except Exception as e:
+            logger.error("Periodic retraining failed: %s", e)
+            return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════

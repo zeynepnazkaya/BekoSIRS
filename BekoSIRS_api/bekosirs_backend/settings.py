@@ -113,7 +113,7 @@ if all([_db_name, _db_user, _db_password, _db_host]):
                 'USER': _db_user,
                 'PASSWORD': _db_password,
                 'HOST': _db_host,
-                'PORT': _db_port or '6543',
+                'PORT': _db_port or '5432',
             }
         }
     else:
@@ -238,6 +238,10 @@ else:
 CACHE_TTL_SHORT = 60 * 5      # 5 minutes
 CACHE_TTL_MEDIUM = 60 * 30    # 30 minutes
 CACHE_TTL_LONG = 60 * 60 * 2  # 2 hours
+
+# ML Model Retraining Configuration
+ML_RETRAIN_INTERVAL_HOURS = int(os.getenv('ML_RETRAIN_INTERVAL_HOURS', '6'))
+ML_AUTO_RETRAIN = os.getenv('ML_AUTO_RETRAIN', 'True').lower() in ('true', '1', 'yes')
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),

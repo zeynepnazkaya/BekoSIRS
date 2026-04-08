@@ -78,6 +78,8 @@ export const installmentAPI = {
     getPlan: (id: number) => api.get(`installment-plans/${id}/`),
     cancelPlan: (id: number) => api.patch(`installment-plans/${id}/`, { status: 'cancelled' }),
     updatePlanNotes: (id: number, notes: string) => api.patch(`installment-plans/${id}/`, { notes }),
+    updateInstallment: (id: number, data: { due_date?: string; amount?: string; payment_date?: string | null; status?: string }) =>
+        api.patch(`installments/${id}/edit/`, data),
 };
 
 // ----------------------------------------
