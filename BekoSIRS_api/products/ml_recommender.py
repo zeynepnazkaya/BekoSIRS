@@ -81,7 +81,7 @@ import time
 import threading
 import logging
 import warnings
-from datetime import date as dt_date, datetime as dt_datetime, time as dt_time, timezone as dt_timezone
+from datetime import date as dt_date, datetime as dt_datetime, time as dt_time, timedelta, timezone as dt_timezone
 
 import numpy as np
 import pandas as pd
@@ -857,6 +857,10 @@ class HybridRecommender:
     DECAY_REVIEW_DAYS = 60
     DECAY_VIEW_DAYS = 30
 
+    # Newly added in-stock products deserve a temporary discovery boost so
+    # they can surface before historical popularity signals accumulate.
+    NEW_PRODUCT_MAX_AGE_DAYS = 30
+
     CACHE_TTL = getattr(settings, 'CACHE_TTL_LONG', 7200)
 
     def __new__(cls):
@@ -1060,6 +1064,13 @@ class HybridRecommender:
                 if boost > 0.1 and reasons.get(pid, (None,))[0] not in ('search',):
                     reasons[pid] = ('price', None)
 
+        # ── 6. New Product Discovery Boost ──
+        for pid, boost in self._get_new_product_boost().items():
+            if pid not in exclude_ids:
+                final_scores[pid] = final_scores.get(pid, 0) + boost
+                if boost > 0 and reasons.get(pid, (None,))[0] not in ('search', 'price'):
+                    reasons[pid] = ('new', None)
+
         # ── Format and return ──
         return self._format_results(final_scores, reasons, top_n, exclude_ids, user=user)
 
@@ -1251,6 +1262,44 @@ class HybridRecommender:
         cache.set(cache_key, scores, 1800)  # Cache for 30 min
         return scores
 
+    def _get_new_product_boost(self):
+        """
+        Return a short-lived boost for recent in-stock catalog additions.
+
+        Popularity-heavy systems naturally underserve fresh products because
+        they start with zero interaction history. This helper injects a small,
+        time-boxed exploration bonus so users can discover new arrivals.
+        """
+        from .models import Product
+
+        boosts = {}
+        now = dt_datetime.now(dt_timezone.utc)
+
+        recent_products = Product.objects.filter(
+            created_at__gte=now - timedelta(days=self.NEW_PRODUCT_MAX_AGE_DAYS),
+            stock__gt=0,
+        ).values('id', 'created_at')
+
+        for product in recent_products:
+            created_at = product['created_at']
+            if created_at is None:
+                continue
+
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=dt_timezone.utc)
+
+            days_old = max(0, (now - created_at).days)
+            # The boost decays in coarse buckets to keep the behavior easy to
+            # explain to product teams and stable across retraining cycles.
+            if days_old <= 7:
+                boosts[product['id']] = 0.4
+            elif days_old <= 14:
+                boosts[product['id']] = 0.25
+            elif days_old <= self.NEW_PRODUCT_MAX_AGE_DAYS:
+                boosts[product['id']] = 0.1
+
+        return boosts
+
     def _get_search_boosts(self, user):
         """Boost products matching user's recent search terms."""
         from .models import SearchHistory
@@ -1384,6 +1433,10 @@ class HybridRecommender:
                 if cat_name:
                     return f"{cat_name} kategorisinde popüler"
                 return "Çok tercih edilen ürün"
+            elif source == 'new':
+                if cat_name:
+                    return f"Yeni eklenen {cat_name} ürünü"
+                return "Yeni gelen ürün"
             else:
                 if cat_name:
                     return f"{cat_name} — sizin için seçildi"
