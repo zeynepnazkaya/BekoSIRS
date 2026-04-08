@@ -856,6 +856,7 @@ class HybridRecommender:
     DECAY_WISHLIST_DAYS = 45
     DECAY_REVIEW_DAYS = 60
     DECAY_VIEW_DAYS = 30
+    DECAY_CLICK_DAYS = 45
 
     # Newly added in-stock products deserve a temporary discovery boost so
     # they can surface before historical popularity signals accumulate.
@@ -999,7 +1000,11 @@ class HybridRecommender:
         # Gather user's interaction history
         user_interactions = self._get_user_interactions(user, ignore_cache)
         owned_product_ids = self._get_owned_product_ids(user)
+        dismissed_product_ids = self._get_dismissed_product_ids(user)
         exclude_ids.update(owned_product_ids)  # Don't recommend already purchased items
+        # Dismissals express an explicit "do not show again" preference, so we
+        # remove them from the candidate pool instead of treating them as soft noise.
+        exclude_ids.update(dismissed_product_ids)
 
         # Adaptive weights make cold-start users rely on safer popularity
         # signals while active users get stronger personalized NCF ranking.
@@ -1202,12 +1207,16 @@ class HybridRecommender:
             )
             interactions[vh['product_id']] = interactions.get(vh['product_id'], 0) + (weight * decay)
 
-        # Dismissed recommendations (weight=-3.0) — negative signal
-        # Mirrors wishlist's +3.0 but inverted: penalizes similar products
-        for pid in Recommendation.objects.filter(
-            customer=user, dismissed=True
-        ).values_list('product_id', flat=True):
-            interactions[pid] = interactions.get(pid, 0) - 3.0
+        # Clicked recommendations are a stronger signal than a plain view
+        # because the user actively followed a recommendation card.
+        for rec in Recommendation.objects.filter(
+            customer=user, clicked=True
+        ).values('product_id', 'created_at'):
+            decay = temporal_weight(
+                rec['created_at'],
+                half_life_days=self.DECAY_CLICK_DAYS,
+            )
+            interactions[rec['product_id']] = interactions.get(rec['product_id'], 0) + (2.0 * decay)
 
         cache.set(cache_key, interactions, 300)
         return interactions
@@ -1218,6 +1227,22 @@ class HybridRecommender:
         return set(
             ProductOwnership.objects.filter(
                 customer=user
+            ).values_list('product_id', flat=True)
+        )
+
+    def _get_dismissed_product_ids(self, user):
+        """
+        Return products the user explicitly dismissed from recommendations.
+
+        Dismiss is treated as a hard exclude because the UI wording means
+        "do not show this again", which is stronger than a low relevance score.
+        """
+        from .models import Recommendation
+
+        return set(
+            Recommendation.objects.filter(
+                customer=user,
+                dismissed=True,
             ).values_list('product_id', flat=True)
         )
 
