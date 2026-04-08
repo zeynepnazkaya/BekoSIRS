@@ -139,11 +139,11 @@ describe('RecommendationsScreen Tests', () => {
 
         // Because Robot Süpürge is already in wishlist, its button text should be different (wait for wishlist to load)
         await waitFor(() => {
-            expect(getByText('Listede')).toBeTruthy(); // Robot Süpürge
-            expect(getAllByText('İstek Listesi').length).toBeGreaterThan(0); // TV
+            expect(getByText('İstek Listesinde')).toBeTruthy(); // Robot Süpürge
+            expect(getAllByText('İstek Listesine Ekle').length).toBeGreaterThan(0); // TV
         });
 
-        const addBtns = getAllByText('İstek Listesi');
+        const addBtns = getAllByText('İstek Listesine Ekle');
         fireEvent.press(addBtns[0]); // Press the first valid btn (Akıllı TV)
 
         await waitFor(() => {

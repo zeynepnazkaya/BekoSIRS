@@ -186,7 +186,7 @@ describe('ProfileScreen Tests', () => {
         fireEvent.press(getByText('Kaydet'));
 
         await waitFor(() => {
-            expect(Alert.alert).toHaveBeenCalledWith('Hata', 'Yeni şifreler eşleşmiyor');
+            expect(Alert.alert).toHaveBeenCalledWith('Hata', 'Yeni şifreler birbiriyle eşleşmiyor.');
             expect(api.patch).not.toHaveBeenCalled();
         });
 
@@ -197,7 +197,7 @@ describe('ProfileScreen Tests', () => {
 
         fireEvent.press(getByText('Kaydet'));
         await waitFor(() => {
-            expect(Alert.alert).toHaveBeenCalledWith('Hata', 'Şifre en az 6 karakter olmalıdır');
+            expect(Alert.alert).toHaveBeenCalledWith('Hata', 'Yeni şifreniz en az 6 karakterden oluşmalıdır.');
             expect(api.patch).not.toHaveBeenCalled();
         });
     });

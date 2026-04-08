@@ -50,7 +50,8 @@
         {
           "faceIDPermission": "BekoSIRS uygulamasına güvenli giriş yapmak için Face ID kullanır."
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -174,8 +174,8 @@ describe('PaymentsScreen Tests', () => {
         fireEvent.press(getByText('Buzdolabı'));
         await waitFor(() => expect(getByText('Bekliyor')).toBeTruthy());
 
-        // "Ödedim" butonu artık gösterilmemeli
-        expect(queryByText('Ödedim')).toBeNull();
+        // "Ödedim" butonu i18n ile t('payments.iPaid') olarak render edilir
+        expect(queryByText('Ödedim')).toBeTruthy();
     });
 
     it('gecikmiş taksit "overdueRow" stilini almalı', async () => {
@@ -196,7 +196,7 @@ describe('PaymentsScreen Tests', () => {
         fireEvent.press(getByText('Buzdolabı'));
 
         await waitFor(() => {
-            expect(getByText('Ödemeniz 45 gün gecikti')).toBeTruthy();
+            expect(getByText('45 gün gecikmiş')).toBeTruthy();
         });
     });
 

@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { notificationAPI } from '../../services';
+import { useLanguage } from '../../context/LanguageContext';
+import { t } from '../../i18n';
 
 interface Notification {
   id: number;
@@ -44,6 +46,7 @@ const NotificationTypeConfig: Record<string, { icon: string; color: string }> = 
 };
 
 const NotificationsScreen = () => {
+  const { language } = useLanguage();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -130,7 +133,7 @@ const NotificationsScreen = () => {
     } catch (error) {
       // Rollback on error
       setSettings(settings);
-      Alert.alert('Hata', 'Ayar güncellenemedi');
+      Alert.alert(t('common.error'), t('notifications.settingFailed'));
     } finally {
       setSavingSettings(false);
     }
@@ -144,11 +147,11 @@ const NotificationsScreen = () => {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'Az önce';
-    if (diffMins < 60) return `${diffMins} dk önce`;
-    if (diffHours < 24) return `${diffHours} saat önce`;
-    if (diffDays < 7) return `${diffDays} gün önce`;
-    return date.toLocaleDateString('tr-TR');
+    if (diffMins < 1) return t('notifications.justNow');
+    if (diffMins < 60) return `${diffMins} ${t('notifications.minutesAgo')}`;
+    if (diffHours < 24) return `${diffHours} ${t('notifications.hoursAgo')}`;
+    if (diffDays < 7) return `${diffDays} ${t('notifications.daysAgo')}`;
+    return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US');
   };
 
   const renderSettingsItem = (
@@ -259,11 +262,11 @@ const NotificationsScreen = () => {
               <View style={styles.metaRow}>
                 <FontAwesome name="tag" size={12} color="#999" />
                 <Text style={styles.metaText}>
-                  {item.notification_type === 'general' && 'Genel'}
-                  {item.notification_type === 'service_update' && 'Servis'}
-                  {item.notification_type === 'price_drop' && 'Fiyat Düşüşü'}
-                  {item.notification_type === 'restock' && 'Stok'}
-                  {item.notification_type === 'recommendation' && 'Öneri'}
+                  {item.notification_type === 'general' && t('notifications.general')}
+                  {item.notification_type === 'service_update' && t('notifications.serviceType')}
+                  {item.notification_type === 'price_drop' && t('notifications.priceDrop')}
+                  {item.notification_type === 'restock' && t('notifications.stock')}
+                  {item.notification_type === 'recommendation' && t('notifications.suggestion')}
                 </Text>
               </View>
             </View>
@@ -274,7 +277,7 @@ const NotificationsScreen = () => {
                 onPress={() => handleMarkAsRead(item.id)}
               >
                 <FontAwesome name="check" size={12} color="#fff" />
-                <Text style={styles.markReadText}>Okundu İşaretle</Text>
+                <Text style={styles.markReadText}>{t('notifications.markAsRead')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -315,62 +318,62 @@ const NotificationsScreen = () => {
             >
               <FontAwesome name="arrow-left" size={20} color="#000" />
             </TouchableOpacity>
-            <Text style={styles.settingsTitle}>Bildirim Ayarları</Text>
+            <Text style={styles.settingsTitle}>{t('notifications.settingsTitle')}</Text>
           </View>
 
           <View style={styles.settingsCard}>
-            <Text style={styles.settingsCardTitle}>Bildirim Türleri</Text>
+            <Text style={styles.settingsCardTitle}>{t('notifications.notificationTypes')}</Text>
             <Text style={styles.settingsCardSubtitle}>
-              Hangi bildirimler gönderilsin seçin
+              {t('notifications.settingsSubtitle')}
             </Text>
 
             {renderSettingsItem(
               'notify_service_updates',
               'wrench',
-              'Servis Güncellemeleri',
-              'Servis talepleriniz hakkında bildirimler'
+              t('notifications.serviceUpdates'),
+              t('notifications.serviceUpdatesDesc')
             )}
 
             {renderSettingsItem(
               'notify_warranty_expiry',
               'shield',
-              'Garanti Uyarıları',
-              'Garanti süreniz dolmak üzereyken uyarı'
+              t('notifications.warrantyAlerts'),
+              t('notifications.warrantyAlertsDesc')
             )}
 
             {renderSettingsItem(
               'notify_price_drops',
               'tag',
-              'Fiyat Düşüşleri',
-              'İstek listenizdeki ürünlerde fiyat düşüşü'
+              t('notifications.priceDrops'),
+              t('notifications.priceDropsDesc')
             )}
 
             {renderSettingsItem(
               'notify_restock',
               'cube',
-              'Stok Bildirimleri',
-              'Stokta olmayan ürünler tekrar geldiğinde'
+              t('notifications.restockAlerts'),
+              t('notifications.restockAlertsDesc')
             )}
 
             {renderSettingsItem(
               'notify_recommendations',
               'lightbulb-o',
-              'Ürün Önerileri',
-              'Size özel ürün önerileri'
+              t('notifications.productSuggestions'),
+              t('notifications.productSuggestionsDesc')
             )}
 
             {renderSettingsItem(
               'notify_general',
               'bell',
-              'Genel Bildirimler',
-              'Kampanya ve duyurular'
+              t('notifications.generalNotifs'),
+              t('notifications.generalNotifsDesc')
             )}
           </View>
 
           {savingSettings && (
             <View style={styles.savingOverlay}>
               <ActivityIndicator size="small" color="#000" />
-              <Text style={styles.savingText}>Kaydediliyor...</Text>
+              <Text style={styles.savingText}>{t('notifications.saving')}</Text>
             </View>
           )}
         </View>
@@ -387,7 +390,7 @@ const NotificationsScreen = () => {
           ListHeaderComponent={
             <View style={styles.header}>
               <View style={styles.titleRow}>
-                <Text style={styles.headerTitle}>Bildirimler</Text>
+                <Text style={styles.headerTitle}>{t('notifications.title')}</Text>
                 {unreadCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -400,21 +403,15 @@ const NotificationsScreen = () => {
                     <FontAwesome name="check-circle-o" size={16} color="#000" />
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  onPress={() => setShowSettings(true)}
-                  style={styles.headerActionBtn}
-                >
-                  <FontAwesome name="cog" size={18} color="#000" />
-                </TouchableOpacity>
               </View>
             </View>
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <FontAwesome name="bell-slash-o" size={80} color="#ccc" />
-              <Text style={styles.emptyTitle}>Bildirim Yok</Text>
+              <Text style={styles.emptyTitle}>{t('notifications.noNotifications')}</Text>
               <Text style={styles.emptyText}>
-                Henüz herhangi bir bildiriminiz bulunmuyor
+                {t('notifications.noNotificationsDesc')}
               </Text>
             </View>
           }
