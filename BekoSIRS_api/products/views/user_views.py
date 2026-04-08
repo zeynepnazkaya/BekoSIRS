@@ -183,6 +183,16 @@ def profile_view(request):
     })
 
 
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def save_push_token_view(request):
+    """PATCH /api/v1/users/push-token/ - Expo push token kaydet."""
+    token = request.data.get('push_token', '').strip()
+    request.user.push_token = token or None
+    request.user.save(update_fields=['push_token'])
+    return Response({'status': 'ok'})
+
+
 @api_view(["GET", "PUT", "PATCH"])
 @permission_classes([IsAuthenticated])
 def notification_settings_view(request):

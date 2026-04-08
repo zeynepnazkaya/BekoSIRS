@@ -16,6 +16,7 @@ from products.views import (
     GroupViewSet,
     profile_view,
     notification_settings_view,
+    save_push_token_view,
     # Services
     ServiceRequestViewSet,
     ProductOwnershipViewSet,
@@ -121,6 +122,7 @@ urlpatterns = [
     path("my-products/", my_products_direct, name="my-products"),
     path("profile/", profile_view, name="user-profile"),
     path("notification-settings/", notification_settings_view, name="notification-settings"),
+    path("users/push-token/", save_push_token_view, name="save-push-token"),
     path("dashboard/summary/", DashboardSummaryView.as_view(), name="dashboard-summary"),
 
     # 🔹 GİRİŞ (Login) - Müşteri kısıtlaması bu view içinde yapılıyor

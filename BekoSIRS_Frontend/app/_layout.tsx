@@ -1,8 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { Stack, useSegments, useRouter } from 'expo-router';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { isAuthenticated, getToken } from '../storage/storage.native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { pushTokenAPI } from '../services';
+
+async function registerPushToken() {
+  try {
+    if (Platform.OS === 'web') return;
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') return;
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    await pushTokenAPI.savePushToken(tokenData.data);
+  } catch {
+    // Push token kaydı başarısız olursa sessizce geç
+  }
+}
 
 export default function RootLayout() {
   const segments = useSegments();
@@ -46,6 +60,9 @@ export default function RootLayout() {
     }
 
     if (hasToken) {
+      // Push token kaydet (hata olursa sessizce geç)
+      registerPushToken();
+
       // Kullanıcı rolünü alıp o role ait sayfalarda kalmasını garantiye al
       AsyncStorage.getItem('userRole').then(role => {
         const isDeliveryRole = role === 'delivery';

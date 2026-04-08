@@ -96,3 +96,10 @@ export const installmentAPI = {
     getPlanInstallments: (planId: number) => api.get(`api/v1/installment-plans/${planId}/installments/`),
     confirmPayment: (installmentId: number) => api.post(`api/v1/installments/${installmentId}/customer-confirm/`),
 };
+
+// ─────────────────────────────────────────
+// 🔹 PUSH NOTIFICATION TOKEN
+// ─────────────────────────────────────────
+export const pushTokenAPI = {
+    savePushToken: (token: string) => api.patch('api/v1/users/push-token/', { push_token: token }),
+};

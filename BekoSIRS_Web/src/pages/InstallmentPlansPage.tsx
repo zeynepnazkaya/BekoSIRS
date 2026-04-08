@@ -88,6 +88,16 @@ export default function InstallmentPlansPage() {
     const [notesValue, setNotesValue] = useState("");
     const [savingNotes, setSavingNotes] = useState(false);
 
+    // Taksit düzenleme state'i
+    const [editingInstallmentId, setEditingInstallmentId] = useState<number | null>(null);
+    const [editInstallmentForm, setEditInstallmentForm] = useState<{
+        due_date: string;
+        amount: string;
+        payment_date: string;
+        status: string;
+    }>({ due_date: '', amount: '', payment_date: '', status: '' });
+    const [savingInstallment, setSavingInstallment] = useState(false);
+
     // Creation Modal State
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [customers, setCustomers] = useState<any[]>([]);
@@ -283,6 +293,43 @@ export default function InstallmentPlansPage() {
         }
     };
 
+    const handleStartEditInstallment = (inst: Installment) => {
+        setEditingInstallmentId(inst.id);
+        setEditInstallmentForm({
+            due_date: inst.due_date,
+            amount: inst.amount,
+            payment_date: inst.payment_date || '',
+            status: inst.status,
+        });
+    };
+
+    const handleSaveInstallment = async (installmentId: number) => {
+        setSavingInstallment(true);
+        try {
+            const payload: any = {
+                due_date: editInstallmentForm.due_date,
+                amount: editInstallmentForm.amount,
+                status: editInstallmentForm.status,
+            };
+            if (editInstallmentForm.payment_date) {
+                payload.payment_date = editInstallmentForm.payment_date;
+            } else {
+                payload.payment_date = null;
+            }
+            await installmentAPI.updateInstallment(installmentId, payload);
+            showToast("success", "Taksit güncellendi");
+            setEditingInstallmentId(null);
+            if (selectedPlan) {
+                fetchInstallments(selectedPlan.id);
+                fetchPlans();
+            }
+        } catch (error: any) {
+            showToast("error", error.response?.data?.detail || "Taksit güncellenemedi");
+        } finally {
+            setSavingInstallment(false);
+        }
+    };
+
     const handleCancelPlan = async () => {
         if (!selectedPlan) return;
         setCancellingPlan(true);
@@ -441,6 +488,7 @@ export default function InstallmentPlansPage() {
                                 </span>
                                 {!editingNotes && selectedPlan.status !== 'cancelled' && (
                                     <button
+                                        data-testid="notes-edit-btn"
                                         onClick={() => { setEditingNotes(true); setNotesValue(selectedPlan.notes || ""); }}
                                         className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800"
                                     >
@@ -512,6 +560,7 @@ export default function InstallmentPlansPage() {
                                             else if (inst.days_until_due === 0) daysLabel = "Bugün son gün";
                                             else daysLabel = `${inst.days_until_due} gün kaldı`;
                                         }
+                                        const isEditing = editingInstallmentId === inst.id;
                                         return (
                                             <tr
                                                 key={inst.id}
@@ -523,30 +572,105 @@ export default function InstallmentPlansPage() {
                                                         {inst.installment_number}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4 font-medium">{formatCurrency(inst.amount)}</td>
+                                                {/* Tutar */}
+                                                <td className="px-4 py-4 font-medium">
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            value={editInstallmentForm.amount}
+                                                            onChange={e => setEditInstallmentForm(f => ({ ...f, amount: e.target.value }))}
+                                                            className="w-28 border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        />
+                                                    ) : formatCurrency(inst.amount)}
+                                                </td>
+                                                {/* Vade Tarihi */}
                                                 <td className="px-4 py-4">
-                                                    <div>{formatDate(inst.due_date)}</div>
-                                                    {daysLabel && (
-                                                        <div className={`text-xs mt-0.5 font-medium ${isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
-                                                            {daysLabel}
-                                                        </div>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="date"
+                                                            value={editInstallmentForm.due_date}
+                                                            onChange={e => setEditInstallmentForm(f => ({ ...f, due_date: e.target.value }))}
+                                                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        />
+                                                    ) : (
+                                                        <>
+                                                            <div>{formatDate(inst.due_date)}</div>
+                                                            {daysLabel && (
+                                                                <div className={`text-xs mt-0.5 font-medium ${isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                                                                    {daysLabel}
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-4">{inst.payment_date ? formatDate(inst.payment_date) : "-"}</td>
+                                                {/* Ödeme Tarihi */}
                                                 <td className="px-4 py-4">
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeClass(inst.status)}`}>
-                                                        {inst.status_display}
-                                                    </span>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="date"
+                                                            value={editInstallmentForm.payment_date}
+                                                            onChange={e => setEditInstallmentForm(f => ({ ...f, payment_date: e.target.value }))}
+                                                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        />
+                                                    ) : (inst.payment_date ? formatDate(inst.payment_date) : "-")}
                                                 </td>
-                                                <td className="px-4 py-4 text-right">
-                                                    {inst.status === "customer_confirmed" && (
-                                                        <button
-                                                            onClick={() => handleApprovePayment(inst.id)}
-                                                            disabled={approvingId === inst.id}
-                                                            className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
+                                                {/* Durum */}
+                                                <td className="px-4 py-4">
+                                                    {isEditing ? (
+                                                        <select
+                                                            value={editInstallmentForm.status}
+                                                            onChange={e => setEditInstallmentForm(f => ({ ...f, status: e.target.value }))}
+                                                            className="border border-gray-300 rounded px-2 py-1 text-sm"
                                                         >
-                                                            {approvingId === inst.id ? "..." : "Onayla"}
-                                                        </button>
+                                                            <option value="pending">Bekliyor</option>
+                                                            <option value="customer_confirmed">Müşteri Onayladı</option>
+                                                            <option value="paid">Ödendi</option>
+                                                            <option value="overdue">Gecikmiş</option>
+                                                        </select>
+                                                    ) : (
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeClass(inst.status)}`}>
+                                                            {inst.status_display}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                {/* İşlem Butonları */}
+                                                <td className="px-4 py-4 text-right">
+                                                    {isEditing ? (
+                                                        <div className="flex gap-2 justify-end">
+                                                            <button
+                                                                onClick={() => handleSaveInstallment(inst.id)}
+                                                                disabled={savingInstallment}
+                                                                className="px-3 py-1 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 text-sm"
+                                                            >
+                                                                {savingInstallment ? "..." : "Kaydet"}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setEditingInstallmentId(null)}
+                                                                className="px-3 py-1 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 text-sm"
+                                                            >
+                                                                İptal
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex gap-2 justify-end">
+                                                            {inst.status === "customer_confirmed" && (
+                                                                <button
+                                                                    onClick={() => handleApprovePayment(inst.id)}
+                                                                    disabled={approvingId === inst.id}
+                                                                    className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
+                                                                >
+                                                                    {approvingId === inst.id ? "..." : "Onayla"}
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={() => handleStartEditInstallment(inst)}
+                                                                className="px-3 py-1 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 text-sm flex items-center gap-1"
+                                                            >
+                                                                <Pencil />
+                                                                Düzenle
+                                                            </button>
+                                                        </div>
                                                     )}
                                                 </td>
                                             </tr>

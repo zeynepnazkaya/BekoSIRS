@@ -8,7 +8,6 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import PaymentsScreen from '../app/(drawer)/payments';
 import { installmentAPI } from '../services';
-import { Alert } from 'react-native';
 
 const mockPush = jest.fn();
 
@@ -23,7 +22,6 @@ jest.mock('../services', () => ({
     installmentAPI: {
         getMyPlans: jest.fn(),
         getPlanInstallments: jest.fn(),
-        confirmPayment: jest.fn(),
     },
 }));
 
@@ -31,9 +29,6 @@ jest.mock('../services', () => ({
 jest.mock('@expo/vector-icons', () => ({
     FontAwesome: 'FontAwesome',
 }));
-
-// Spy on Alert
-jest.spyOn(Alert, 'alert');
 
 const mockPlansData = {
     results: [
@@ -124,7 +119,6 @@ describe('PaymentsScreen Tests', () => {
         jest.clearAllMocks();
         (installmentAPI.getMyPlans as jest.Mock).mockResolvedValue({ data: mockPlansData });
         (installmentAPI.getPlanInstallments as jest.Mock).mockResolvedValue({ data: mockInstallmentsData });
-        (installmentAPI.confirmPayment as jest.Mock).mockResolvedValue({ data: { success: true } });
     });
 
     it('renders loading indicator initially', () => {
@@ -174,42 +168,14 @@ describe('PaymentsScreen Tests', () => {
         expect(getAllByText('5.000,00 ₺').length).toBe(2);
     });
 
-    it('"Ödedim" butonu onay diyaloğunu açmalı, API\'yi doğrudan çağırmamalı', async () => {
-        const { getByText } = render(<PaymentsScreen />);
+    it('"Ödedim" butonu artık görünmemeli (özellik kaldırıldı)', async () => {
+        const { getByText, queryByText } = render(<PaymentsScreen />);
         await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
         fireEvent.press(getByText('Buzdolabı'));
-        await waitFor(() => expect(getByText('Ödedim')).toBeTruthy());
+        await waitFor(() => expect(getByText('Bekliyor')).toBeTruthy());
 
-        fireEvent.press(getByText('Ödedim'));
-
-        // Alert diyaloğu açılmalı
-        expect(Alert.alert).toHaveBeenCalledWith(
-            'Ödemeyi Onayla',
-            expect.stringContaining('onaylamak istiyor musunuz'),
-            expect.any(Array)
-        );
-        // API henüz çağrılmamış olmalı
-        expect(installmentAPI.confirmPayment).not.toHaveBeenCalled();
-    });
-
-    it('"Evet, Ödedim" onaylandığında API çağrılmalı', async () => {
-        const { getByText } = render(<PaymentsScreen />);
-        await waitFor(() => expect(getByText('Buzdolabı')).toBeTruthy());
-        fireEvent.press(getByText('Buzdolabı'));
-        await waitFor(() => expect(getByText('Ödedim')).toBeTruthy());
-
-        fireEvent.press(getByText('Ödedim'));
-
-        // Alert'in onay butonunu bul ve tıkla
-        const alertCall = (Alert.alert as jest.Mock).mock.calls[0];
-        const buttons = alertCall[2];
-        const confirmButton = buttons.find((b: any) => b.text === 'Evet, Ödedim');
-        await confirmButton.onPress();
-
-        await waitFor(() => {
-            expect(installmentAPI.confirmPayment).toHaveBeenCalledWith(102);
-            expect(Alert.alert).toHaveBeenCalledWith('Başarılı', 'Ödeme onayı gönderildi. Mağaza onayını bekleyin.');
-        });
+        // "Ödedim" butonu artık gösterilmemeli
+        expect(queryByText('Ödedim')).toBeNull();
     });
 
     it('gecikmiş taksit "overdueRow" stilini almalı', async () => {
@@ -230,7 +196,7 @@ describe('PaymentsScreen Tests', () => {
         fireEvent.press(getByText('Buzdolabı'));
 
         await waitFor(() => {
-            expect(getByText('45 gün gecikmiş')).toBeTruthy();
+            expect(getByText('Ödemeniz 45 gün gecikti')).toBeTruthy();
         });
     });
 

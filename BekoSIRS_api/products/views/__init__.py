@@ -24,6 +24,7 @@ from .user_views import (
     GroupViewSet,
     profile_view,
     notification_settings_view,
+    save_push_token_view,
 )
 
 # Service request views

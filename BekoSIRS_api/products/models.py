@@ -66,6 +66,9 @@ class CustomUser(AbstractUser):
     # Bildirim Tercihleri (Taşındı -> UserNotificationPreference)
     # notify_* fields removed
 
+    # Push Notification Token (Expo)
+    push_token = models.CharField(max_length=200, blank=True, null=True, verbose_name="Push Token")
+
     # Biometric Authentication (Face ID / Face Unlock via DeepFace)
     biometric_enabled = models.BooleanField(default=False, verbose_name="Biyometrik Giriş")
     face_encoding = models.JSONField(

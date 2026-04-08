@@ -4,8 +4,9 @@ from products.models import InstallmentPlan, Installment, Notification
 from products.serializers import (
     InstallmentPlanSerializer, InstallmentPlanListSerializer,
     InstallmentPlanDetailSerializer, InstallmentPlanCreateSerializer,
-    InstallmentSerializer, AdminApprovePaymentSerializer
+    InstallmentSerializer, AdminApprovePaymentSerializer,
 )
+from products.push_notifications import send_push_to_user
 
 
 def _mark_overdue_installments():
@@ -41,6 +42,17 @@ def _mark_overdue_installments():
                 related_product=product,
             ))
         Notification.objects.bulk_create(notifications, ignore_conflicts=True)
+
+        # Push notification gönder
+        for inst in newly_overdue:
+            customer = inst.plan.customer
+            product = inst.plan.product
+            days_late = (today - inst.due_date).days
+            send_push_to_user(
+                customer,
+                'Gecikmiş Taksit',
+                f"{product.name if product else 'Ürününüz'} için {inst.installment_number}. taksidiniz {days_late} gün gecikmiş."
+            )
 
 
 class InstallmentPlanViewSet(viewsets.ModelViewSet):
@@ -136,8 +148,30 @@ class InstallmentViewSet(viewsets.ModelViewSet):
             if not plan.installments.exclude(status='paid').exists():
                 plan.status = 'completed'
                 plan.save()
-                
+
+            # Push notification to customer
+            customer = plan.customer
+            product_name = plan.product.name if plan.product else 'Ürününüz'
+            send_push_to_user(
+                customer,
+                'Ödeme Onaylandı',
+                f"{product_name} için {installment.installment_number}. taksidiniz onaylandı."
+            )
+
             return response.Response({'status': 'success'})
+        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @decorators.action(detail=True, methods=['patch'], url_path='edit')
+    def edit(self, request, pk=None):
+        """PATCH /api/v1/installments/{id}/edit/ — Admin taksit düzenleme."""
+        if not request.user.is_staff:
+            return response.Response({'error': 'Yetkisiz işlem'}, status=status.HTTP_403_FORBIDDEN)
+
+        installment = self.get_object()
+        serializer = InstallmentEditSerializer(installment, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return response.Response(InstallmentSerializer(installment).data)
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @decorators.action(detail=True, methods=['post'], url_path='customer-confirm')
