@@ -855,16 +855,16 @@ class HybridRecommender:
     WEIGHT_CONTENT = 0.3
     WEIGHT_POPULARITY = 0.2
 
-    # Temporal decay half-life values are tuned by interaction intent:
-    # purchases stay meaningful longer, while views should reflect recency.
+    # Yari omur degerleri etkilesim amacina gore ayarlanmistir:
+    # Satin alma sinyali uzun sure gecerliligini korur, goruntulemeler daha hizli eskir.
     DECAY_PURCHASE_DAYS = 90
     DECAY_WISHLIST_DAYS = 45
     DECAY_REVIEW_DAYS = 60
     DECAY_VIEW_DAYS = 30
     DECAY_CLICK_DAYS = 45
 
-    # Newly added in-stock products deserve a temporary discovery boost so
-    # they can surface before historical popularity signals accumulate.
+    # Yeni eklenen stokta urunler, gecmis populerlik sinyalleri birikmeden
+    # oneri listesine girebilsin diye gecici bir kesif boost'u alir.
     NEW_PRODUCT_MAX_AGE_DAYS = 30
 
     CACHE_TTL = getattr(settings, 'CACHE_TTL_LONG', 7200)
@@ -894,8 +894,8 @@ class HybridRecommender:
         if self._loaded:
             logger.info("Recommender loaded saved models from disk")
             if not getattr(settings, 'ML_DISABLE_BACKGROUND_JOBS', False):
-                # Pre-generate recommendations for active users in background
-                # only outside test mode where background DB writes are expected.
+                # Aktif kullanicilarin onerileri arka planda onceden uretilir;
+                # test modunda arka plan DB yazimi beklenmediginden bu adim atlanir.
                 self._pregenerate_in_background()
         else:
             logger.info("No saved models found; starting background training...")
