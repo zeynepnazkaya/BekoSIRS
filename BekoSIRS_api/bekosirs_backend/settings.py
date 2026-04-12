@@ -184,6 +184,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '20/minute',
         'user': '100/minute',
+        'biometric_login': '5/minute',
     },
     # Pagination for list endpoints
     'DEFAULT_PAGINATION_CLASS': 'products.pagination.CustomPagination',

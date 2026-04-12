@@ -75,7 +75,7 @@ class CustomUser(AbstractUser):
         null=True, 
         blank=True, 
         verbose_name="Yüz Özellik Vektörü",
-        help_text="Mathematical representation of the user's face (extracted via DeepFace)"
+        help_text="Encrypted face embedding (Fernet/AES). Use products.encryption to read."
     )
 
     # Adres Bilgileri (Taşındı -> CustomerAddress)

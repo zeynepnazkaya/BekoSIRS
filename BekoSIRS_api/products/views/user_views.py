@@ -111,11 +111,32 @@ class GroupViewSet(viewsets.ModelViewSet):
         })
 
 
-@api_view(["GET", "PUT", "PATCH"])
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def profile_view(request):
     """GET/PUT/PATCH /api/profile/ - User profile management."""
     user = request.user
+
+    if request.method == "DELETE":
+        current_password = request.data.get("current_password")
+        if not current_password:
+            return Response(
+                {"success": False, "error": "Hesabınızı silmek için mevcut şifrenizi girmelisiniz."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not user.check_password(current_password):
+            return Response(
+                {"success": False, "error": "Şifrenizi yanlış girdiniz. Hesap silme işlemi iptal edildi."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        username = user.username
+        user.delete()
+        return Response({
+            "success": True,
+            "message": f"{username} hesabı kalıcı olarak silindi."
+        })
 
     if request.method == "GET":
         return Response({
