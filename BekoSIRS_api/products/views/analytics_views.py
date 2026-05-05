@@ -111,23 +111,17 @@ class SalesForecastView(views.APIView):
     """
     AI-powered sales forecast using Ridge Regression.
 
-    The model is trained on full ProductAssignment history (monthly aggregates)
-    with 11 input features:
-      month_sin, month_cos, quarter_sin, quarter_cos  — cyclical seasonality
-      lag_1, lag_2, lag_3, rolling_avg_3              — recent sales history
-      category_encoded, price_bucket, year_scaled     — product attributes
-
-    Products with sales activity in the last 12 months are included.
-    Each forecast includes a 95% confidence interval derived from training
-    residuals (lower/upper bounds).
-
-    Falls back to simple trend-based projection if the model is unavailable.
+    Supports ?months=3 (default) or ?months=12 for the prediction horizon.
+    All data is fetched in batch queries to avoid N+1 performance issues.
     """
     permission_classes = [permissions.AllowAny]
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    MONTH_NAMES_TR = {
+        1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan",
+        5: "Mayıs", 6: "Haziran", 7: "Temmuz", 8: "Ağustos",
+        9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+    }
+
     @staticmethod
     def _trend_label(m1, m2, m3):
         if m3 > m2 > m1:
@@ -137,28 +131,25 @@ class SalesForecastView(views.APIView):
         return 'stable'
 
     @staticmethod
-    def _fallback_preds(m1, m2, m3, trend):
+    def _fallback_preds(m1, m2, m3, trend, n_months=3):
         """Simple trend-based fallback when ML model is unavailable."""
         avg = (m1 + m2 + m3) / 3 if (m1 + m2 + m3) > 0 else 1
         rate = 1.15 if trend == 'increasing' else (0.9 if trend == 'decreasing' else 1.0)
-        p1 = int(m3 * rate) if m3 > 0 else int(avg)
-        p2 = int(p1 * rate)
-        p3 = int(p2 * rate)
-        # No CI available for fallback — return symmetric ±20% estimate
-        return [
-            {"predicted": max(p1, 1), "lower": max(int(p1 * 0.8), 1), "upper": int(p1 * 1.2)},
-            {"predicted": max(p2, 1), "lower": max(int(p2 * 0.8), 1), "upper": int(p2 * 1.2)},
-            {"predicted": max(p3, 1), "lower": max(int(p3 * 0.8), 1), "upper": int(p3 * 1.2)},
-        ]
+        results = []
+        prev = m3 if m3 > 0 else avg
+        for step in range(n_months):
+            p = int(prev * rate) if step == 0 else int(results[-1]["predicted"] * rate)
+            p = max(p, 1)
+            ci = max(int(p * 0.2 * (1.0 + step * 0.05)), 1)
+            results.append({
+                "predicted": p,
+                "lower": max(p - ci, 0),
+                "upper": p + ci,
+            })
+        return results
 
     @staticmethod
     def _recommendation(hist_avg, pred_avg, ci_width=None):
-        """
-        Stock/campaign recommendation based on Ridge Regression forecast.
-
-        Uses both the direction of change and, when available, the width of
-        the 95% confidence interval to qualify the certainty of the advice.
-        """
         if pred_avg > hist_avg * 1.15:
             base = "Stok artırılmalı — talep belirgin şekilde artıyor"
         elif pred_avg > hist_avg * 1.05:
@@ -175,20 +166,22 @@ class SalesForecastView(views.APIView):
 
         return base
 
-    # ------------------------------------------------------------------
-    # GET
-    # ------------------------------------------------------------------
     def get(self, request):
         from products.ml_sales_forecaster import get_sales_forecaster
+        from django.db.models.functions import ExtractMonth, ExtractYear
 
-        # --- Load ML model (trains on-demand if not saved yet) ---
+        n_months = int(request.query_params.get('months', 3))
+        if n_months not in (3, 12):
+            n_months = 3
+
+        # --- Load ML model ---
         forecaster = get_sales_forecaster()
         model_info = None
         if forecaster and forecaster.is_trained:
             ci_half = round(1.96 * forecaster.metrics.get('residual_std', 0), 2)
             model_info = {
                 'model_type': 'Ridge Regression (alpha=1.0, L2 regularisation)',
-                'features': 'month_sin/cos, quarter_sin/cos, lag_1-3, rolling_avg, category, price_bucket, year',
+                'features': 'month_sin/cos, quarter_sin/cos, lag_1-12, rolling_avg, category, price_bucket, year',
                 'train_r2':       forecaster.metrics.get('train_r2'),
                 'test_r2':        forecaster.metrics.get('test_r2'),
                 'train_mae':      forecaster.metrics.get('train_mae'),
@@ -198,99 +191,113 @@ class SalesForecastView(views.APIView):
                 'n_samples':      forecaster.metrics.get('n_samples'),
             }
 
-        # --- Use last 12 months to find products with meaningful history ---
         now = timezone.now()
         twelve_months_ago = now - timedelta(days=365)
-        three_months_ago  = now - timedelta(days=90)
-        two_months_ago    = now - timedelta(days=60)
-        one_month_ago     = now - timedelta(days=30)
 
-        products_with_sales = (
+        # --- BATCH: Get top products by sales volume (single query) ---
+        top_product_ids = list(
             ProductAssignment.objects
             .filter(assigned_at__gte=twelve_months_ago)
             .values('product_id')
             .annotate(total_sales=Sum('quantity'))
             .order_by('-total_sales')[:20]
+            .values_list('product_id', flat=True)
         )
 
-        product_ids = [p['product_id'] for p in products_with_sales]
-        products = Product.objects.filter(id__in=product_ids).select_related('category')
+        if not top_product_ids:
+            top_product_ids = list(Product.objects.values_list('id', flat=True)[:5])
 
+        products = {p.id: p for p in Product.objects.filter(id__in=top_product_ids).select_related('category')}
+
+        # --- BATCH: Get ALL monthly sales for these products in ONE query ---
+        monthly_agg = (
+            ProductAssignment.objects
+            .filter(product_id__in=top_product_ids, assigned_at__gte=twelve_months_ago)
+            .annotate(
+                sale_year=ExtractYear('assigned_at'),
+                sale_month=ExtractMonth('assigned_at'),
+            )
+            .values('product_id', 'sale_year', 'sale_month')
+            .annotate(total=Sum('quantity'))
+        )
+
+        # Build a lookup: {product_id: {(year, month): total}}
+        sales_lookup = {}
+        for row in monthly_agg:
+            pid = row['product_id']
+            key = (row['sale_year'], row['sale_month'])
+            sales_lookup.setdefault(pid, {})[key] = row['total']
+
+        # --- Build forecasts ---
         forecasts = []
 
-        for product in products:
+        for pid in top_product_ids:
+            product = products.get(pid)
+            if not product:
+                continue
+
+            product_sales = sales_lookup.get(pid, {})
+
             # Build per-month sales for the last 12 months (oldest → newest)
             monthly_sales = []
+            monthly_labels = []
             for months_back in range(12, 0, -1):
-                period_start = now - timedelta(days=30 * months_back)
-                period_end   = now - timedelta(days=30 * (months_back - 1))
-                total = ProductAssignment.objects.filter(
-                    product=product,
-                    assigned_at__gte=period_start,
-                    assigned_at__lt=period_end,
-                ).aggregate(total=Sum('quantity'))['total'] or 0
+                target_date = now - timedelta(days=30 * months_back)
+                y, m = target_date.year, target_date.month
+                total = product_sales.get((y, m), 0)
                 monthly_sales.append(total)
+                monthly_labels.append(self.MONTH_NAMES_TR.get(m, str(m)))
 
-            # Last 3 months for trend label and display
             m1, m2, m3 = monthly_sales[9], monthly_sales[10], monthly_sales[11]
-
             trend = self._trend_label(m1, m2, m3)
 
-            # --- Ridge Regression prediction with confidence intervals ---
+            # --- Ridge Regression prediction ---
             if forecaster and forecaster.is_trained:
                 category = product.category.name if product.category else 'Diğer'
                 price = float(product.price) if product.price else 0.0
-                ml_preds = forecaster.predict_next_3_months(
+                ml_preds = forecaster.predict_next_n_months(
                     monthly_sales, category, price,
-                    base_date=now,
+                    base_date=now, n_months=n_months,
                 )
-                preds = ml_preds if ml_preds else self._fallback_preds(m1, m2, m3, trend)
+                preds = ml_preds if ml_preds else self._fallback_preds(m1, m2, m3, trend, n_months)
             else:
-                preds = self._fallback_preds(m1, m2, m3, trend)
+                preds = self._fallback_preds(m1, m2, m3, trend, n_months)
 
             hist_avg = (m1 + m2 + m3) / 3 if (m1 + m2 + m3) > 0 else 1
-            pred_avg = sum(p["predicted"] for p in preds) / 3
-            avg_ci_width = sum(p["upper"] - p["lower"] for p in preds) / 3
+            pred_avg = sum(p["predicted"] for p in preds) / len(preds)
+            avg_ci_width = sum(p["upper"] - p["lower"] for p in preds) / len(preds)
 
-            month_labels = ["Ay 1", "Ay 2", "Ay 3"]
+            # Future month labels
+            forecast_entries = []
+            for i in range(len(preds)):
+                future_m = ((now.month - 1 + i + 1) % 12) + 1
+                label = self.MONTH_NAMES_TR.get(future_m, f"Ay {i+1}")
+                forecast_entries.append({
+                    "month": label,
+                    "month_index": i + 1,
+                    "predicted_sales": max(preds[i]["predicted"], 1),
+                    "lower_bound":     max(preds[i]["lower"], 0),
+                    "upper_bound":     max(preds[i]["upper"], 1),
+                })
+
             forecasts.append({
                 "product_name": product.name,
                 "brand": product.brand or "Beko",
                 "current_stock": product.stock,
                 "trend": trend,
-                "historical_sales": {"month_1": m1, "month_2": m2, "month_3": m3},
-                "forecasts": [
-                    {
-                        "month": month_labels[i],
-                        "predicted_sales": max(preds[i]["predicted"], 1),
-                        "lower_bound":     max(preds[i]["lower"], 0),
-                        "upper_bound":     max(preds[i]["upper"], 1),
-                    }
-                    for i in range(3)
+                "historical_monthly": [
+                    {"month": monthly_labels[i], "sales": monthly_sales[i]}
+                    for i in range(12)
                 ],
+                "historical_sales": {"month_1": m1, "month_2": m2, "month_3": m3},
+                "forecasts": forecast_entries,
                 "recommendation": self._recommendation(hist_avg, pred_avg, avg_ci_width),
             })
-
-        # --- Empty-state fallback ---
-        if not forecasts:
-            for product in Product.objects.all()[:5]:
-                forecasts.append({
-                    "product_name": product.name,
-                    "brand": product.brand or "Beko",
-                    "current_stock": product.stock,
-                    "trend": "stable",
-                    "historical_sales": {"month_1": 0, "month_2": 0, "month_3": 0},
-                    "forecasts": [
-                        {"month": "Ay 1", "predicted_sales": 1, "lower_bound": 0, "upper_bound": 2},
-                        {"month": "Ay 2", "predicted_sales": 1, "lower_bound": 0, "upper_bound": 2},
-                        {"month": "Ay 3", "predicted_sales": 1, "lower_bound": 0, "upper_bound": 2},
-                    ],
-                    "recommendation": "Henüz satış verisi yok",
-                })
 
         return response.Response({
             "top_forecasts": forecasts,
             "model_info": model_info,
+            "prediction_months": n_months,
         })
 
 
@@ -476,28 +483,25 @@ class MarketingAutomationView(views.APIView):
             # SALES CHARTS DATA (Weekly / Monthly / Yearly)
             # ==========================================
             
-            # 1. Weekly Sales
+            # 1. Weekly Sales (batch query instead of per-day loop)
+            seven_days_ago = today - timedelta(days=6)
+            weekly_qs = ProductAssignment.objects.filter(
+                assigned_at__date__gte=seven_days_ago,
+                assigned_at__date__lte=today,
+            ).values('assigned_at__date').annotate(
+                total_sales=Sum('quantity'),
+                total_revenue=Sum(F('product__price') * F('quantity'))
+            )
+            weekly_map = {item['assigned_at__date']: item for item in weekly_qs}
+            
             weekly_stats = []
             for i in range(6, -1, -1):
                 day = today - timedelta(days=i)
-                # Using range for date to be safe with datetimes
-                day_start = timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.min.time()))
-                day_end = timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.max.time()))
-                
-                sales = ProductAssignment.objects.filter(
-                    assigned_at__range=(day_start, day_end)
-                ).aggregate(total=Sum('quantity'))['total'] or 0
-                
-                revenue = ProductAssignment.objects.filter(
-                    assigned_at__range=(day_start, day_end)
-                ).aggregate(
-                    total=Sum(F('product__price') * F('quantity'))
-                )['total'] or 0
-                
+                stats = weekly_map.get(day, {'total_sales': 0, 'total_revenue': 0})
                 weekly_stats.append({
                     "label": day.strftime("%d %b"),
-                    "sales": sales,
-                    "revenue": float(revenue)
+                    "sales": stats['total_sales'] or 0,
+                    "revenue": float(stats['total_revenue'] or 0)
                 })
 
             # 2. Monthly Sales

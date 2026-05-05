@@ -295,7 +295,7 @@ export default function ProductDetailScreen() {
         {/* Product Image */}
         <View style={styles.imageContainer}>
           {imageSource ? (
-            <Image source={{ uri: imageSource }} style={styles.image} resizeMode="cover" />
+            <Image source={{ uri: getImageUrl(imageSource) || '' }} style={styles.image} resizeMode="cover" />
           ) : (
             <View style={[styles.image, styles.imagePlaceholder]}>
               <FontAwesome name="image" size={80} color="#ccc" />

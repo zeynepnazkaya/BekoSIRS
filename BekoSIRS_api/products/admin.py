@@ -18,13 +18,18 @@ class CustomerAddressInline(admin.StackedInline):
     can_delete = False
     verbose_name_plural = 'Adres Bilgileri'
 
+# @admin.register: Bu dekoratör, belirtilen modeli Django Admin paneline kaydeder.
 @admin.register(CustomUser)
 class CustomUserAdmin(BaseUserAdmin):
+    # list_display: Admin panelindeki ana listede hangi sütunların görüneceğini belirler.
     list_display = ('username', 'email', 'role', 'is_active', 'is_staff')
+    # list_filter: Panel sağ tarafında hızlı filtreleme (Örn: Role göre) kutusu oluşturur.
     list_filter = ('role', 'is_staff')
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Ek Bilgiler', {'fields': ('role', 'phone_number', 'biometric_enabled')}),
     )
+    # inlines: Bir kaydı (Kullanıcı) düzenlerken, ona bağlı diğer tabloları (Adres, Tercihler) 
+    # aynı ekranın altında görmemizi ve düzenlememizi sağlar.
     inlines = [CustomerAddressInline, UserNotificationPreferenceInline]
 
 
@@ -37,6 +42,7 @@ class CategoryAdmin(admin.ModelAdmin):
 class ProductAdmin(admin.ModelAdmin):
     list_display = ('name', 'brand', 'category', 'price', 'stock', 'warranty_duration_months')
     list_filter = ('category', 'brand')
+    # search_fields: Üstteki arama kutusunun hangi alanlarda arama yapacağını belirler.
     search_fields = ('name', 'description')
 
 
@@ -89,6 +95,7 @@ class ReviewAdmin(admin.ModelAdmin):
     list_display = ('customer', 'product', 'rating', 'is_approved', 'created_at')
     list_filter = ('rating', 'is_approved', 'created_at')
     search_fields = ('customer__username', 'product__name', 'comment')
+    # actions: Birden fazla kaydı seçip tek tıkla toplu işlem yapmamızı sağlar.
     actions = ['approve_reviews']
 
     @admin.action(description='Seçili yorumları onayla')

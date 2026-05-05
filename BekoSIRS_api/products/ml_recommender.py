@@ -326,9 +326,10 @@ class NCFModel:
             user_product_views[key] = vh['view_count']
         
         # Add user_view_count column to interactions_df
-        interactions_df['user_view_count'] = interactions_df.apply(
-            lambda row: user_product_views.get((row['user_id'], row['product_id']), 0), axis=1
-        )
+        interactions_df['user_view_count'] = [
+            user_product_views.get((uid, pid), 0)
+            for uid, pid in zip(interactions_df['user_id'], interactions_df['product_id'])
+        ]
 
         # ── Merge everything ──
         merged = interactions_df.merge(
@@ -531,12 +532,20 @@ class NCFModel:
             user_score_std = 0
             user_n_unique = 0
 
-        # User category interaction counts
+        # Build a dict lookup for product data to avoid repeated DataFrame filtering
+        product_lookup = {}
+        for _, row in products_df.iterrows():
+            product_lookup[row['id']] = {
+                'category__name': row['category__name'] or 'Unknown',
+                'price': float(row['price'] or 0),
+            }
+
+        # User category interaction counts — uses dict lookup instead of DataFrame filter
         user_cat_counts = {}
         for pid in list(user_views.keys()) + [r['product_id'] for r in user_reviews]:
-            prod_row = products_df[products_df['id'] == pid]
-            if not prod_row.empty:
-                cat = prod_row['category__name'].values[0] or 'Unknown'
+            prod_data = product_lookup.get(pid)
+            if prod_data:
+                cat = prod_data['category__name']
                 user_cat_counts[cat] = user_cat_counts.get(cat, 0) + 1
 
         # ── Precompute product-level stats ──
@@ -556,32 +565,30 @@ class NCFModel:
             wishlist_counts[wi['product__id']] = wishlist_counts.get(wi['product__id'], 0) + 1
 
         # ── Price normalization (use same mean as would be computed from all products) ──
-        all_prices = [float(row['price'] or 0) for _, row in products_df.iterrows()]
+        all_prices = [p['price'] for p in product_lookup.values()]
         price_mean = sum(all_prices) / len(all_prices) if all_prices else 1
         if price_mean == 0:
             price_mean = 1
+        max_price = max(all_prices) if all_prices else 1
 
-        # ── Predict for all product IDs ──
-        scores = {}
+        # ── Pre-encode all known categories for batch lookup ──
+        cat_enc_map = {cls: idx for idx, cls in enumerate(self.category_encoder.classes_)}
+
+        # ── Build feature matrix for ALL products at once (vectorized prediction) ──
+        valid_pids = []
+        feature_rows = []
         for pid in all_product_ids:
-            prod_row = products_df[products_df['id'] == pid]
-            if prod_row.empty:
+            prod_data = product_lookup.get(pid)
+            if prod_data is None:
                 continue
 
-            cat_name = prod_row['category__name'].values[0] or 'Unknown'
-            price = float(prod_row['price'].values[0] or 0)
+            cat_name = prod_data['category__name']
+            price = prod_data['price']
 
-            # Category encoding
-            if cat_name in self.category_encoder.classes_:
-                cat_enc = self.category_encoder.transform([cat_name])[0]
-            else:
-                cat_enc = 0
-
-            # Price features
+            cat_enc = cat_enc_map.get(cat_name, 0)
             price_normalized = price / price_mean
-            price_bucket = min(int(price / max(1, max(all_prices) / 5)), 4) if all_prices else 2
+            price_bucket = min(int(price / max(1, max_price / 5)), 4) if all_prices else 2
 
-            # Product stats
             p_ratings = review_by_prod.get(pid, [])
             prod_avg_rating = sum(p_ratings) / len(p_ratings) if p_ratings else 0
             prod_n_reviews = len(p_ratings)
@@ -589,14 +596,10 @@ class NCFModel:
             prod_n_purchases = purchase_counts.get(pid, 0)
             prod_n_wishlist = wishlist_counts.get(pid, 0)
 
-            # User-category affinity
             user_cat_affinity = user_cat_counts.get(cat_name, 0) / max(user_n_interactions, 1)
-
-            # Per-user view count for THIS product (0 if never viewed)
             user_view_count = user_views.get(pid, 0)
 
-            # Build feature vector — MUST match training order (14 features)
-            features = np.array([[
+            feature_rows.append([
                 cat_enc,
                 price_normalized,
                 price_bucket,
@@ -611,11 +614,19 @@ class NCFModel:
                 prod_n_wishlist,
                 user_cat_affinity,
                 user_view_count,
-            ]])
-            features = self.scaler.transform(features)
+            ])
+            valid_pids.append(pid)
 
-            score = self.model.predict(features)[0]
-            scores[pid] = max(score, 0)
+        if not feature_rows:
+            return {}
+
+        # Single batch predict instead of per-product predict
+        X = self.scaler.transform(np.array(feature_rows, dtype=float))
+        predictions = self.model.predict(X)
+
+        scores = {}
+        for pid, pred in zip(valid_pids, predictions):
+            scores[pid] = max(pred, 0)
 
         return scores
 
@@ -732,12 +743,22 @@ class ContentBasedModel:
         self.similarity_matrix = cosine_similarity(self.tfidf_matrix)
 
         # Category boost: products in the same category get +0.15 similarity
+        # Vectorized: build a boolean mask of same-category pairs, apply boost at once
         categories = self.products_df['category__name'].values
-        for i in range(len(categories)):
-            for j in range(i + 1, len(categories)):
-                if categories[i] and categories[j] and categories[i] == categories[j]:
-                    self.similarity_matrix[i][j] += 0.15
-                    self.similarity_matrix[j][i] += 0.15
+        n = len(categories)
+        # Group indices by category for efficient pair matching
+        cat_groups = {}
+        for idx, cat in enumerate(categories):
+            if cat:
+                cat_groups.setdefault(cat, []).append(idx)
+        for indices in cat_groups.values():
+            if len(indices) > 1:
+                ix = np.array(indices)
+                # Use numpy advanced indexing: boost all (i, j) pairs within same category
+                row_idx = np.repeat(ix, len(ix))
+                col_idx = np.tile(ix, len(ix))
+                mask = row_idx != col_idx  # skip diagonal
+                self.similarity_matrix[row_idx[mask], col_idx[mask]] += 0.15
 
         # Build product index mapping
         self.indices = pd.Series(
@@ -1417,12 +1438,12 @@ class HybridRecommender:
         price_min = avg_price * 0.7
         price_max = avg_price * 1.3
 
-        mask = (
-            (self.content.products_df['price'] >= price_min) &
-            (self.content.products_df['price'] <= price_max)
-        )
-        for _, row in self.content.products_df[mask].iterrows():
-            boosts[row['id']] = 0.5
+        # Vectorized: build dict directly from filtered DataFrame columns
+        df = self.content.products_df
+        mask = (df['price'] >= price_min) & (df['price'] <= price_max)
+        matched_ids = df.loc[mask, 'id'].values
+        for pid in matched_ids:
+            boosts[pid] = 0.5
 
         return boosts
 
@@ -1633,14 +1654,22 @@ class HybridRecommender:
         diverse_items = []
         added_pids = set()
 
+        # Batch-fetch all candidate products in one query instead of N+1 individual lookups
+        all_candidate_pids = [int(pid) for pid, _ in sorted_items]
+        products_by_id = {
+            p.id: p
+            for p in Product.objects.select_related('category').filter(id__in=all_candidate_pids)
+        }
+
         # Pass 1: Strict filtering based on user's known categories
         for pid, score in sorted_items:
             if len(diverse_items) >= top_n:
                 break
             try:
-                # Ensure pid is int for DB lookup
                 p_id = int(pid)
-                product = Product.objects.select_related('category').get(id=p_id)
+                product = products_by_id.get(p_id)
+                if product is None:
+                    continue
                 cat_name = str(product.category.name).strip() if product.category else 'Other'
 
                 # Skip categories the user has never interacted with (if we have user data)
@@ -1657,7 +1686,7 @@ class HybridRecommender:
                     })
                     category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
                     added_pids.add(p_id)
-            except (Product.DoesNotExist, ValueError, TypeError):
+            except (ValueError, TypeError):
                 continue
 
         # Pass 2: If we still don't have enough items, relax the category constraint
@@ -1668,23 +1697,23 @@ class HybridRecommender:
                 p_id = int(pid)
                 if p_id in added_pids:
                     continue
-                    
-                try:
-                    product = Product.objects.select_related('category').get(id=p_id)
-                    cat_name = str(product.category.name).strip() if product.category else 'Other'
 
-                    if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
-                        reason_tuple = reasons.get(pid, ('default', None))
-                        diverse_items.append({
-                            'product': product,
-                            'product_id': p_id,
-                            'score': round(float(score), 4),
-                            'reason': _build_reason(product, reason_tuple),
-                        })
-                        category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
-                        added_pids.add(p_id)
-                except (Product.DoesNotExist, ValueError, TypeError):
+                product = products_by_id.get(p_id)
+                if product is None:
                     continue
+
+                cat_name = str(product.category.name).strip() if product.category else 'Other'
+
+                if category_counts.get(cat_name, 0) < MAX_PER_CATEGORY:
+                    reason_tuple = reasons.get(pid, ('default', None))
+                    diverse_items.append({
+                        'product': product,
+                        'product_id': p_id,
+                        'score': round(float(score), 4),
+                        'reason': _build_reason(product, reason_tuple),
+                    })
+                    category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
+                    added_pids.add(p_id)
 
         # ── Format and return ──
         logger.info(

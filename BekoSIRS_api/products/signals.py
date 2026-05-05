@@ -1,83 +1,102 @@
+# products/signals.py
 """
-Django signals for Products app.
-Auto-creates Delivery record when ProductAssignment is created.
+Automatic AuditLog generation for key model CRUD operations.
+Registers Django post_save and post_delete signals for important models.
 """
-from django.db.models.signals import post_save
+import logging
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from django.utils import timezone
-from .models import ProductAssignment, Delivery, DepotLocation, ProductOwnership, Product
+
+logger = logging.getLogger(__name__)
 
 
-@receiver(post_save, sender=ProductAssignment)
-def create_delivery_for_assignment(sender, instance, created, **kwargs):
-    """
-    Automatically create a Delivery record when a ProductAssignment is created.
-    Sets delivery address from customer's profile.
-    """
-    if created:
-        # Get customer address
-        customer = instance.customer
-        
-        # Get default depot (if exists)
-        try:
-            default_depot = DepotLocation.objects.get(is_default=True)
-        except DepotLocation.DoesNotExist:
-            default_depot = None
-        
-        # Create formatted address and get coordinates
-        # Safely check for address relation using hasattr or try-except
-        address_text = "Adres Bulunamadı"
-        lat = None
-        lng = None
-        
-        try:
-            if hasattr(customer, 'customer_address') and customer.customer_address:
-                addr = customer.customer_address
-                parts = []
-                if addr.open_address: parts.append(addr.open_address)
-                if addr.area: parts.append(addr.area.name)
-                if addr.district: parts.append(addr.district.name)
-                
-                if parts:
-                    address_text = ", ".join(parts)
-                
-                lat = addr.latitude
-                lng = addr.longitude
-        except Exception as e:
-            pass  # Could not fetch address; use default
-            
-        # Create delivery
-        Delivery.objects.create(
-            assignment=instance,
-            address=address_text,
-            address_lat=lat,
-            address_lng=lng,
-            depot=default_depot,
-            customer_phone_snapshot=customer.phone_number or "",
-            address_snapshot=address_text,
-            status='WAITING'
+def _create_audit_log(action, instance, model_name, user=None, changes=None):
+    """Helper to create an AuditLog entry."""
+    try:
+        from products.models import AuditLog
+        AuditLog.objects.create(
+            user=user,
+            action=action,
+            model_name=model_name,
+            object_id=instance.pk,
+            object_repr=str(instance)[:255],
+            changes=changes,
         )
-@receiver(post_save, sender=Delivery)
-def create_ownership_on_delivery(sender, instance, **kwargs):
-    """
-    When delivery is marked as DELIVERED, create ProductOwnership record.
-    This enables warranty tracking and product reviews.
-    """
-    if instance.status == 'DELIVERED':
-        # Get related assignment and product
-        assignment = instance.assignment
-        if not assignment:
-            return
+    except Exception as e:
+        logger.warning("AuditLog creation failed: %s", e)
 
-        customer = assignment.customer
-        product = assignment.product
-        
-        # Check if ownership already exists to avoid duplicates
-        if not ProductOwnership.objects.filter(customer=customer, product=product).exists():
-            ProductOwnership.objects.create(
-                customer=customer,
-                product=product,
-                purchase_date=instance.delivered_at.date() if instance.delivered_at else timezone.now().date(),
-                serial_number=f"BEKO-{assignment.id}-{product.id}" # Auto-generate serial
-            )
 
+def _extract_user(instance):
+    """Try to extract a user from common model fields."""
+    for attr in ('assigned_by', 'created_by', 'user', 'customer', 'delivered_by'):
+        user = getattr(instance, attr, None)
+        if user is not None:
+            return user
+    return None
+
+
+# ─── ProductAssignment ───
+@receiver(post_save, sender='products.ProductAssignment')
+def log_assignment_save(sender, instance, created, **kwargs):
+    action = 'create' if created else 'update'
+    user = _extract_user(instance)
+    changes = {
+        'product': str(instance.product) if instance.product else None,
+        'customer': str(instance.customer) if instance.customer else None,
+        'quantity': instance.quantity,
+        'status': instance.status,
+    }
+    _create_audit_log(action, instance, 'ProductAssignment', user=user, changes=changes)
+
+
+@receiver(post_delete, sender='products.ProductAssignment')
+def log_assignment_delete(sender, instance, **kwargs):
+    _create_audit_log('delete', instance, 'ProductAssignment', user=_extract_user(instance))
+
+
+# ─── Product ───
+@receiver(post_save, sender='products.Product')
+def log_product_save(sender, instance, created, **kwargs):
+    action = 'create' if created else 'update'
+    changes = {
+        'name': instance.name,
+        'stock': instance.stock,
+        'price': str(instance.price) if instance.price else None,
+    }
+    _create_audit_log(action, instance, 'Product', changes=changes)
+
+
+@receiver(post_delete, sender='products.Product')
+def log_product_delete(sender, instance, **kwargs):
+    _create_audit_log('delete', instance, 'Product')
+
+
+# ─── ServiceRequest ───
+@receiver(post_save, sender='products.ServiceRequest')
+def log_service_save(sender, instance, created, **kwargs):
+    action = 'create' if created else 'update'
+    changes = {
+        'status': instance.status,
+        'request_type': instance.request_type,
+    }
+    _create_audit_log(action, instance, 'ServiceRequest', user=instance.customer, changes=changes)
+
+
+# ─── Delivery ───
+@receiver(post_save, sender='products.Delivery')
+def log_delivery_save(sender, instance, created, **kwargs):
+    action = 'create' if created else 'update'
+    changes = {'status': instance.status}
+    _create_audit_log(action, instance, 'Delivery', user=_extract_user(instance), changes=changes)
+
+
+# ─── InstallmentPlan ───
+@receiver(post_save, sender='products.InstallmentPlan')
+def log_installment_plan_save(sender, instance, created, **kwargs):
+    action = 'create' if created else 'update'
+    changes = {
+        'total_amount': str(instance.total_amount),
+        'status': instance.status,
+        'installment_count': instance.installment_count,
+    }
+    _create_audit_log(action, instance, 'InstallmentPlan', user=_extract_user(instance), changes=changes)

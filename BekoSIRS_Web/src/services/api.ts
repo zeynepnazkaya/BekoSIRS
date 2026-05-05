@@ -132,7 +132,7 @@ export const chartsAPI = {
 // 🔹 ANALYTICS - FORECAST API
 // ----------------------------------------
 export const salesForecastAPI = {
-    getSummary: () => api.get('analytics/forecast/'),
+    getSummary: (months: number = 3) => api.get('analytics/forecast/', { params: { months } }),
     getSeasonalAnalysis: () => api.get('analytics/seasonal/'),
 };
 

@@ -47,16 +47,19 @@ interface DashboardSummary {
         total_products: number;
     };
     critical_alerts: StockAlert[];
+    warning_alerts: StockAlert[];
     opportunities: StockAlert[];
     top_sellers: Array<{ product__name: string; product__brand: string; sales_count: number }>;
-    low_performers: Array<{ name: string; brand: string; stock: number }>;
+    low_performers: Array<{ name: string; brand: string; stock: number; sales_count: number }>;
 }
 
 export default function StockIntelligenceWidget() {
     const [data, setData] = useState<DashboardSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'critical' | 'opportunities' | 'sellers'>('critical');
+    const [activeTab, setActiveTab] = useState<'critical' | 'warnings' | 'opportunities' | 'sellers'>('critical');
+    const [warningsPage, setWarningsPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
 
     useEffect(() => {
         fetchData();
@@ -192,6 +195,18 @@ export default function StockIntelligenceWidget() {
                         )}
                     </button>
                     <button
+                        onClick={() => setActiveTab('warnings')}
+                        className={`pb-4 px-2 text-sm font-medium transition-all relative ${activeTab === 'warnings'
+                                ? 'text-yellow-600'
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                    >
+                        Uyarılar ({data.warning_alerts.length})
+                        {activeTab === 'warnings' && (
+                            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-600 rounded-t-full" />
+                        )}
+                    </button>
+                    <button
                         onClick={() => setActiveTab('opportunities')}
                         className={`pb-4 px-2 text-sm font-medium transition-all relative ${activeTab === 'opportunities'
                                 ? 'text-green-600'
@@ -276,6 +291,71 @@ export default function StockIntelligenceWidget() {
                         </div>
                     )}
 
+                    {/* WARNING ALERTS TAB */}
+                    {activeTab === 'warnings' && (
+                        <div className="space-y-4">
+                            {data.warning_alerts.length === 0 ? (
+                                <EmptyState message="Takip edilmesi gereken sarı alarm uyarısı bulunmuyor." icon={CheckCircle} color="text-green-500" />
+                            ) : (
+                                <>
+                                {data.warning_alerts.slice((warningsPage - 1) * ITEMS_PER_PAGE, warningsPage * ITEMS_PER_PAGE).map((alert) => (
+                                    <div key={alert.product_id} className="bg-white rounded-xl p-5 border border-yellow-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row gap-6">
+                                        <div className="flex-1">
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <AlertTriangle size={16} className="text-yellow-500" />
+                                                    <span className="text-xs font-bold text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Dikkat</span>
+                                                </div>
+                                                <span className="text-xs text-gray-400 font-medium">{alert.category}</span>
+                                            </div>
+                                            <h4 className="font-bold text-gray-900 text-lg mb-1">{alert.product_name}</h4>
+                                            <p className="text-sm text-gray-500 mb-4">{alert.brand} - {alert.message}</p>
+
+                                            <div className="flex flex-wrap gap-4 text-sm">
+                                                <div className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                                                    <span className="text-gray-500 block text-xs">Mevcut Stok</span>
+                                                    <span className="font-bold text-gray-900">{alert.current_stock} Adet</span>
+                                                </div>
+                                                <div className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                                                    <span className="text-gray-500 block text-xs">Tahmini Tükenme</span>
+                                                    <span className="font-bold text-yellow-700">
+                                                        {alert.days_until_stockout ? `${Math.round(alert.days_until_stockout)} Gün` : '-'}
+                                                    </span>
+                                                </div>
+                                                <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                                                    <span className="text-blue-600 block text-xs">Satış Hızı</span>
+                                                    <span className="font-bold text-blue-800">{alert.velocity.toFixed(1)} / gün</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {Math.ceil(data.warning_alerts.length / ITEMS_PER_PAGE) > 1 && (
+                                    <div className="flex justify-center items-center gap-4 mt-6 pt-4 border-t border-gray-100">
+                                        <button 
+                                            disabled={warningsPage === 1}
+                                            onClick={() => setWarningsPage(p => p - 1)}
+                                            className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-all"
+                                        >
+                                            Önceki
+                                        </button>
+                                        <span className="text-sm text-gray-500 font-medium">
+                                            Sayfa {warningsPage} / {Math.ceil(data.warning_alerts.length / ITEMS_PER_PAGE)}
+                                        </span>
+                                        <button 
+                                            disabled={warningsPage === Math.ceil(data.warning_alerts.length / ITEMS_PER_PAGE)}
+                                            onClick={() => setWarningsPage(p => p + 1)}
+                                            className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-all"
+                                        >
+                                            Sonraki
+                                        </button>
+                                    </div>
+                                )}
+                                </>
+                            )}
+                        </div>
+                    )}
+
                     {/* OPPORTUNITIES TAB */}
                     {activeTab === 'opportunities' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -347,21 +427,21 @@ export default function StockIntelligenceWidget() {
                                         <TrendingDown size={18} className="text-red-500" />
                                         Düşük Performans
                                     </h4>
-                                    <span className="text-xs text-gray-500">Stok Var / Satış Yok</span>
+                                    <span className="text-xs text-gray-500">En Az Satanlar (Son 30 Gün)</span>
                                 </div>
                                 <div className="divide-y divide-gray-100">
                                     {data.low_performers.map((low, idx) => (
                                         <div key={idx} className="p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors">
-                                            <div className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
-                                                <AlertCircle size={16} />
+                                            <div className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center font-bold text-sm">
+                                                {idx + 1}
                                             </div>
                                             <div className="flex-1">
                                                 <p className="font-medium text-gray-900 text-sm">{low.name}</p>
-                                                <p className="text-xs text-gray-500">{low.brand}</p>
+                                                <p className="text-xs text-gray-500">{low.brand} • Stok: {low.stock}</p>
                                             </div>
                                             <div className="text-right">
-                                                <span className="block font-bold text-gray-900">{low.stock}</span>
-                                                <span className="text-xs text-gray-400">Atıl Stok</span>
+                                                <span className="block font-bold text-gray-900">{low.sales_count}</span>
+                                                <span className="text-xs text-gray-400">Adet Satış</span>
                                             </div>
                                         </div>
                                     ))}

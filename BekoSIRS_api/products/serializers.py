@@ -14,6 +14,7 @@ from .models import (
 # Category Serializer
 # ---------------------------
 class CategorySerializer(serializers.ModelSerializer):
+    # ModelSerializer: Django modelindeki alanları otomatik olarak eşleyen sınıftır.
     product_count = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -27,10 +28,12 @@ class CategorySerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     # Kategori detaylarını obje olarak döner (read_only)
     category = CategorySerializer(read_only=True)
-    # Kategori ismini düz metin olarak da döner (Frontend kolaylığı için)
+    # SerializerMethodField: Veritabanında fiziksel olarak bulunmayan, 
+    # Python koduyla o an hesaplanan dinamik alanlar oluşturur.
     category_name = serializers.SerializerMethodField()
 
     def get_category_name(self, obj):
+        # Bu fonksiyon 'get_<alan_adi>' formatında olmalıdır.
         return obj.category.name if obj.category else None
     
     class Meta:
@@ -55,12 +58,12 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         """
-        Görsel alanı bir URL ise (http/https ile başlıyorsa), 
-        Django'nun otomatik eklediği media url prefixini kaldır ve orijinal URL'i döndür.
+        to_representation: Veri JSON'a çevrilip gönderilmeden hemen önceki son adımdır.
+        Burada veri üzerinde özel formatlama veya 'fix' işlemleri yapılabilir.
         """
         representation = super().to_representation(instance)
         try:
-            # instance.image bir FieldFile objesidir. instance.image.name veritabanındaki raw stringi verir.
+            # Görsel yolu tam URL değilse veya hata varsa burada müdahale ediyoruz.
             if instance.image and str(instance.image.name).startswith(('http', 'https')):
                 representation['image'] = instance.image.name
         except Exception:
@@ -87,7 +90,8 @@ class UserSearchSerializer(serializers.ModelSerializer):
 # Product Ownership (Ürün Sahipliği)
 # ---------------------------
 class ProductOwnershipSerializer(serializers.ModelSerializer):
-    # Ürün detaylarını tam göstermek için ProductSerializer'ı içe gömüyoruz
+    # Nested Serializer: Bir objenin içindeki ilişkili objeyi (Ürün) 
+    # sadece ID olarak değil, tüm detaylarıyla (isim, fiyat vb.) döner.
     product = ProductSerializer(read_only=True)
     warranty_end_date = serializers.DateField(read_only=True)
 
@@ -124,10 +128,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ("username", "password", "email", "first_name", "last_name", "role", "phone_number")
         extra_kwargs = {
+            # write_only=True: Bu alan API'den veri çekerken görünmez, 
+            # sadece veri gönderirken (kayıt olurken) kullanılır. Güvenlik için kritiktir.
             "password": {"write_only": True},
             "email": {
                 "required": True,
                 "allow_blank": False,
+                # UniqueValidator: Veritabanında bu e-postanın benzersiz olduğunu kontrol eder.
                 "validators": [
                     validators.UniqueValidator(
                         CustomUser.objects.all(), 
@@ -135,26 +142,23 @@ class RegisterSerializer(serializers.ModelSerializer):
                     )
                 ],
             },
-            # Telefon numarasının boş geçilebilmesi için ayarlar:
             "phone_number": {"required": False, "allow_null": True, "allow_blank": True}
         }
 
     def create(self, validated_data):
-        # ❗ SQL Server Unique Constraint Hatası Çözümü:
-        # Eğer telefon numarası boş string ("") gelirse, onu veritabanına None (NULL) olarak kaydet.
-        # Böylece birden fazla kişi telefon numarasını boş bırakabilir.
+        # ... SQL Server Unique Constraint Hatası Çözümü ...
         phone = validated_data.get("phone_number")
         if phone == "" or phone is None:
             phone = None 
 
-        # create_user metodu şifreyi otomatik olarak hashler (pbkdf2_sha256)
+        # create_user: Django'nun yerleşik fonksiyonudur. 
+        # Şifreyi PBKDF2 algoritmasıyla otomatik olarak güvenli bir şekilde hash'ler.
         user = CustomUser.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
             password=validated_data["password"],
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
-            # Eğer rol gönderilmezse varsayılan olarak 'customer' ata
             role=validated_data.get("role", "customer"),
             phone_number=phone
         )
@@ -166,6 +170,8 @@ class RegisterSerializer(serializers.ModelSerializer):
 # ---------------------------
 class WishlistItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
+    # PrimaryKeyRelatedField: İlişkili tabloyu sadece ID (Primary Key) 
+    # üzerinden bağlamayı ve veri göndermeyi sağlar.
     product_id = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(), source='product', write_only=True
     )
@@ -192,6 +198,8 @@ class WishlistSerializer(serializers.ModelSerializer):
 # ---------------------------
 class ViewHistorySerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
+    # PrimaryKeyRelatedField: İlişkili tabloyu sadece ID (Primary Key) 
+    # üzerinden bağlamayı ve veri göndermeyi sağlar.
     product_id = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(), source='product', write_only=True
     )
@@ -222,7 +230,9 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
         fields = ['product', 'rating', 'comment']
 
     def validate_rating(self, value):
+        # validate_<alan_adi>: Belirli bir alan için özel doğrulama mantığı yazar.
         if value < 1 or value > 5:
+            # ValidationError: DRF'in standart hata fırlatma mekanizmasıdır.
             raise serializers.ValidationError("Puan 1-5 arasında olmalıdır.")
         return value
 

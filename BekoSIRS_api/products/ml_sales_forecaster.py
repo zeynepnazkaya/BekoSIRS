@@ -257,27 +257,31 @@ class SalesForecastModel:
     # -----------------------------------------------------------------------
     # Prediction  (direct, NOT auto-regressive)
     # -----------------------------------------------------------------------
-    def predict_next_3_months(
+    def predict_next_n_months(
         self,
         last_12_months_sales: list,
         category: str,
         price: float,
         base_date,
+        n_months: int = 3,
     ) -> list:
         """
-        Predict sales for the next 3 calendar months with 95% confidence intervals.
+        Predict sales for the next N calendar months with 95% confidence intervals.
 
         Args:
             last_12_months_sales : [m-12, ..., m-1]  actual monthly sales (oldest first)
             category             : product category name
             price                : product price
             base_date            : datetime of the current period
+            n_months             : number of months to predict (default 3, max 12)
 
         Returns:
-            List of 3 dicts: {"predicted": int, "lower": int, "upper": int}
+            List of N dicts: {"predicted": int, "lower": int, "upper": int}
         """
         if not self.is_trained or self.model is None:
             return None
+
+        n_months = min(max(n_months, 1), 12)
 
         try:
             cat_enc = float(self.category_encoder.transform([category])[0])
@@ -285,15 +289,17 @@ class SalesForecastModel:
             cat_enc = 0.0
 
         pb = float(self._price_bucket(price))
-        # last_12_months_sales[11] = most recent, [0] = oldest
         sales = [float(x) for x in last_12_months_sales]
 
         ci_half = 1.96 * self.residual_std
 
         results = []
-        for step in range(3):
+        for step in range(n_months):
             future_month = ((base_date.month - 1 + step + 1) % 12) + 1
             future_year = base_date.year + ((base_date.month + step) // 12)
+
+            # Confidence widens slightly for further months
+            step_ci = ci_half * (1.0 + step * 0.05)
 
             row = self._build_feature_row(
                 target_month=future_month,
@@ -310,11 +316,15 @@ class SalesForecastModel:
             pred = float(self.model.predict(self.scaler.transform(features))[0])
             results.append({
                 "predicted": max(0, int(round(pred))),
-                "lower":     max(0, int(round(pred - ci_half))),
-                "upper":     max(0, int(round(pred + ci_half))),
+                "lower":     max(0, int(round(pred - step_ci))),
+                "upper":     max(0, int(round(pred + step_ci))),
             })
 
         return results
+
+    # Backward compatibility wrapper
+    def predict_next_3_months(self, last_12_months_sales, category, price, base_date):
+        return self.predict_next_n_months(last_12_months_sales, category, price, base_date, n_months=3)
 
     # -----------------------------------------------------------------------
     # Persistence

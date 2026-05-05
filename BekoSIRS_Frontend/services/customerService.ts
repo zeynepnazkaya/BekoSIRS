@@ -19,6 +19,9 @@ export const wishlistAPI = {
 
     checkItem: (productId: number) =>
         api.get(`api/v1/wishlist/check/${productId}/`),
+
+    updateItem: (productId: number, data: { notify_on_price_drop?: boolean; notify_on_restock?: boolean; note?: string }) =>
+        api.patch(`api/v1/wishlist/update-item/${productId}/`, data),
 };
 
 // ─────────────────────────────────────────

@@ -29,6 +29,7 @@ jest.mock('../services', () => ({
     viewHistoryAPI: {
         recordView: jest.fn(),
     },
+    getImageUrl: jest.fn((url) => url),
 }));
 
 // Mock Icons

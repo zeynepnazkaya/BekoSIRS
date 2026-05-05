@@ -5,6 +5,17 @@ import { KpiCard, SimpleBarChart } from "./DashboardComponents";
 import { ProfessionalSalesChart } from "../components/ProfessionalCharts";
 import { BarChart3, TrendingUp, Users, Mail, FileText, RefreshCw, Snowflake, Play } from "lucide-react";
 import {
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    Legend,
+    ReferenceLine,
+} from 'recharts';
+import {
     chartsAPI,
     salesForecastAPI,
     marketingAPI,
@@ -273,121 +284,230 @@ const ChartsContent: React.FC<{ data: any }> = ({ data }) => {
 };
 
 // ==========================================
-// Forecast Content
+// Forecast Content - with 3/12 month toggle & AreaChart
 // ==========================================
-const ForecastContent: React.FC<{ data: any }> = ({ data }) => {
-    if (!data) return <EmptyState />;
+const ForecastContent: React.FC<{ data: any }> = ({ data: initialData }) => {
+    const [forecastMonths, setForecastMonths] = useState<3 | 12>(3);
+    const [data, setData] = useState<any>(initialData);
+    const [loading, setLoading] = useState(false);
+    const [selectedProduct, setSelectedProduct] = useState<number>(0);
 
-    const topForecasts = data.top_forecasts || [];
-    const modelInfo = data.model_info;
+    // Reload data when months change
+    useEffect(() => {
+        const reload = async () => {
+            setLoading(true);
+            try {
+                const res = await salesForecastAPI.getSummary(forecastMonths);
+                setData(res.data);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        reload();
+    }, [forecastMonths]);
+
+    if (!data && !loading) return <EmptyState />;
+
+    const topForecasts = data?.top_forecasts || [];
+    const modelInfo = data?.model_info;
+    const currentProduct = topForecasts[selectedProduct];
+
+    // Build chart data: historical 12 months + forecast N months
+    const buildChartData = (product: any) => {
+        if (!product) return [];
+        const historical = (product.historical_monthly || []).map((h: any) => ({
+            name: h.month,
+            historical: h.sales,
+            predicted: null as number | null,
+            lower: null as number | null,
+            upper: null as number | null,
+        }));
+        const forecast = (product.forecasts || []).map((f: any) => ({
+            name: f.month,
+            historical: null as number | null,
+            predicted: f.predicted_sales,
+            lower: f.lower_bound,
+            upper: f.upper_bound,
+        }));
+        // Bridge: last historical point connects to first forecast
+        if (historical.length > 0 && forecast.length > 0) {
+            const lastHist = historical[historical.length - 1];
+            forecast[0].historical = lastHist.historical;
+        }
+        return [...historical, ...forecast];
+    };
+
+    const chartData = buildChartData(currentProduct);
 
     return (
         <div className="space-y-6">
-            {/* Model Info Banner */}
-            {modelInfo ? (
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center gap-4">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Header with Month Toggle */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                {/* Model Info Banner */}
+                {modelInfo ? (
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
                         <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
                             <TrendingUp size={20} className="text-white" />
                         </div>
                         <div className="min-w-0">
-                            <p className="font-semibold text-blue-900 text-sm">AI Modeli Aktif</p>
-                            <p className="text-xs text-blue-700 truncate">{modelInfo.model_type}</p>
+                            <p className="font-semibold text-gray-900 text-sm">Ridge Regression AI Modeli Aktif</p>
+                            <p className="text-xs text-gray-500 truncate">
+                                R²={modelInfo.test_r2?.toFixed(3)} · MAE={modelInfo.test_mae?.toFixed(1)} · {modelInfo.n_samples} örnek
+                            </p>
                         </div>
                     </div>
-                    <div className="flex gap-6 shrink-0">
-                        <div className="text-center">
-                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Train R²</p>
-                            <p className="text-lg font-bold text-blue-900">{modelInfo.train_r2?.toFixed(3) ?? '—'}</p>
-                        </div>
-                        <div className="text-center">
-                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Test R²</p>
-                            <p className="text-lg font-bold text-blue-900">{modelInfo.test_r2?.toFixed(3) ?? '—'}</p>
-                        </div>
-                        <div className="text-center">
-                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Test MAE</p>
-                            <p className="text-lg font-bold text-blue-900">{modelInfo.test_mae?.toFixed(1) ?? '—'}</p>
-                        </div>
-                        <div className="text-center">
-                            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Örnekler</p>
-                            <p className="text-lg font-bold text-blue-900">{modelInfo.n_samples ?? '—'}</p>
-                        </div>
+                ) : (
+                    <div className="flex items-center gap-2 text-sm text-yellow-700">
+                        <RefreshCw size={16} />
+                        <span>AI modeli eğitiliyor...</span>
                     </div>
+                )}
+
+                {/* Month Toggle */}
+                <div className="flex bg-white p-1.5 rounded-xl shadow-sm border border-gray-200 self-start md:self-auto">
+                    <button
+                        onClick={() => setForecastMonths(3)}
+                        className={`px-5 py-2 text-sm font-medium rounded-lg transition-all ${forecastMonths === 3
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'}`}
+                    >
+                        3 Aylık
+                    </button>
+                    <button
+                        onClick={() => setForecastMonths(12)}
+                        className={`px-5 py-2 text-sm font-medium rounded-lg transition-all ${forecastMonths === 12
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'}`}
+                    >
+                        12 Aylık
+                    </button>
                 </div>
-            ) : (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex items-center gap-3">
-                    <RefreshCw size={18} className="text-yellow-600 shrink-0" />
-                    <p className="text-sm text-yellow-800">
-                        AI modeli henüz eğitilmedi — basit trend tahmini kullanılıyor.
-                        Modeli eğitmek için: <code className="font-mono bg-yellow-100 px-1 rounded">python manage.py train_sales_model</code>
-                    </p>
+            </div>
+
+            {/* Model Metrics Cards */}
+            {modelInfo && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                        <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Train R²</p>
+                        <p className="text-2xl font-bold text-blue-900 mt-1">{modelInfo.train_r2?.toFixed(3) ?? '—'}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-4 rounded-xl border border-indigo-200">
+                        <p className="text-xs text-indigo-600 font-medium uppercase tracking-wide">Test R²</p>
+                        <p className="text-2xl font-bold text-indigo-900 mt-1">{modelInfo.test_r2?.toFixed(3) ?? '—'}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
+                        <p className="text-xs text-purple-600 font-medium uppercase tracking-wide">Test MAE</p>
+                        <p className="text-2xl font-bold text-purple-900 mt-1">{modelInfo.test_mae?.toFixed(1) ?? '—'}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
+                        <p className="text-xs text-green-600 font-medium uppercase tracking-wide">CI ±95%</p>
+                        <p className="text-2xl font-bold text-green-900 mt-1">{modelInfo.ci_95_halfwidth ?? '—'} adet</p>
+                    </div>
                 </div>
             )}
 
-            {/* Forecast Table */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="font-bold text-gray-900">Satış Tahminleri — Ridge Regresyon (12 Aylık Geçmiş Veri)</h3>
-                    <p className="text-sm text-gray-500 mt-1">
-                        {modelInfo
-                            ? `${modelInfo.model_type} · 95% güven aralığı: ±${modelInfo.ci_95_halfwidth ?? '—'} adet`
-                            : 'Trend tabanlı projeksiyon'}
-                    </p>
+            {loading ? (
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-12 text-center">
+                    <RefreshCw className="mx-auto animate-spin text-blue-600 mb-4" size={32} />
+                    <p className="text-gray-500">Tahminler hesaplanıyor...</p>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Ürün</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Stok</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Trend</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 1 (alt–üst)</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 2 (alt–üst)</th>
-                                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ay 3 (alt–üst)</th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Regresyon Önerisi</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {topForecasts.slice(0, 10).map((item: any, idx: number) => (
-                                <tr key={idx} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4">
-                                        <p className="font-medium text-gray-900">{item.product_name}</p>
-                                        <p className="text-xs text-gray-500">{item.brand}</p>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${item.current_stock === 0 ? 'bg-red-100 text-red-700' :
-                                            item.current_stock < 10 ? 'bg-yellow-100 text-yellow-700' :
-                                                'bg-green-100 text-green-700'
-                                            }`}>
-                                            {item.current_stock}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${item.trend === 'increasing' ? 'bg-green-100 text-green-700' :
-                                            item.trend === 'decreasing' ? 'bg-red-100 text-red-700' :
-                                                'bg-gray-100 text-gray-700'
-                                            }`}>
-                                            {item.trend === 'increasing' ? '📈 Artıyor' :
-                                                item.trend === 'decreasing' ? '📉 Azalıyor' : '➡️ Stabil'}
-                                        </span>
-                                    </td>
-                                    {item.forecasts?.slice(0, 3).map((f: any, fIdx: number) => (
-                                        <td key={fIdx} className="px-6 py-4 text-center">
-                                            <span className="font-bold text-gray-900">{f.predicted_sales}</span>
-                                            {f.lower_bound != null && f.upper_bound != null && (
-                                                <span className="block text-xs text-gray-400 mt-0.5">
-                                                    {f.lower_bound}–{f.upper_bound}
+            ) : (
+                <>
+                    {/* Product Selector */}
+                    {topForecasts.length > 0 && (
+                        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+                            <h3 className="font-bold text-gray-900 mb-4">📈 Satış Tahmin Grafiği — Geçmiş 12 Ay + Gelecek {forecastMonths} Ay</h3>
+                            <div className="flex flex-wrap gap-2 mb-6">
+                                {topForecasts.slice(0, 10).map((item: any, idx: number) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setSelectedProduct(idx)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${selectedProduct === idx
+                                            ? 'bg-blue-600 text-white shadow-md'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                    >
+                                        {item.product_name?.substring(0, 25)}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* AreaChart */}
+                            {chartData.length > 0 && (
+                                <div className="h-[400px]">
+                                    <ForecastAreaChart data={chartData} />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Forecast Table */}
+                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-100">
+                            <h3 className="font-bold text-gray-900">Satış Tahminleri — Ridge Regresyon ({forecastMonths} Aylık)</h3>
+                            <p className="text-sm text-gray-500 mt-1">
+                                {modelInfo
+                                    ? `${modelInfo.model_type} · 95% güven aralığı: ±${modelInfo.ci_95_halfwidth ?? '—'} adet`
+                                    : 'Trend tabanlı projeksiyon'}
+                            </p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase sticky left-0 bg-gray-50">Ürün</th>
+                                        <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Stok</th>
+                                        <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Trend</th>
+                                        {currentProduct?.forecasts?.map((_: any, idx: number) => (
+                                            <th key={idx} className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">
+                                                {topForecasts[0]?.forecasts?.[idx]?.month || `Ay ${idx + 1}`}
+                                            </th>
+                                        ))}
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Öneri</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {topForecasts.slice(0, 10).map((item: any, idx: number) => (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 sticky left-0 bg-white">
+                                                <p className="font-medium text-gray-900 text-sm truncate max-w-[180px]">{item.product_name}</p>
+                                                <p className="text-xs text-gray-500">{item.brand}</p>
+                                            </td>
+                                            <td className="px-3 py-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.current_stock === 0 ? 'bg-red-100 text-red-700' :
+                                                    item.current_stock < 10 ? 'bg-yellow-100 text-yellow-700' :
+                                                        'bg-green-100 text-green-700'
+                                                    }`}>
+                                                    {item.current_stock}
                                                 </span>
-                                            )}
-                                        </td>
+                                            </td>
+                                            <td className="px-3 py-3 text-center">
+                                                <span className={`text-xs font-medium ${item.trend === 'increasing' ? 'text-green-600' :
+                                                    item.trend === 'decreasing' ? 'text-red-600' : 'text-gray-500'
+                                                    }`}>
+                                                    {item.trend === 'increasing' ? '📈' : item.trend === 'decreasing' ? '📉' : '➡️'}
+                                                </span>
+                                            </td>
+                                            {item.forecasts?.map((f: any, fIdx: number) => (
+                                                <td key={fIdx} className="px-3 py-3 text-center">
+                                                    <span className="font-bold text-gray-900 text-sm">{f.predicted_sales}</span>
+                                                    {f.lower_bound != null && f.upper_bound != null && (
+                                                        <span className="block text-xs text-gray-400 mt-0.5">
+                                                            {f.lower_bound}–{f.upper_bound}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            ))}
+                                            <td className="px-4 py-3 text-xs text-gray-600 max-w-[200px]">{item.recommendation}</td>
+                                        </tr>
                                     ))}
-                                    <td className="px-6 py-4 text-sm text-gray-600">{item.recommendation}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
@@ -649,6 +769,127 @@ const SeasonalContent: React.FC<{ data: any }> = ({ data }) => {
                 </div>
             )}
         </div>
+    );
+};
+
+// ==========================================
+// Forecast AreaChart Component
+// ==========================================
+const ForecastChartTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-gray-900 text-white p-3 rounded-xl shadow-xl border border-gray-700 text-sm">
+                <p className="font-semibold mb-1">{label}</p>
+                {payload.map((entry: any, index: number) => {
+                    if (entry.value == null) return null;
+                    return (
+                        <div key={index} className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                            <span className="text-gray-300">{entry.name}:</span>
+                            <span className="font-bold">{entry.value}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+    return null;
+};
+
+const ForecastAreaChart: React.FC<{ data: any[] }> = ({ data }) => {
+    // Find the boundary index between historical and forecast
+    const boundaryIdx = data.findIndex(d => d.predicted !== null && d.historical === null);
+
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <defs>
+                    <linearGradient id="colorHistorical" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorPredicted" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorCI" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.15} />
+                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.05} />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 10, fill: '#6b7280' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#e5e7eb' }}
+                    interval={0}
+                    angle={-35}
+                    textAnchor="end"
+                    height={50}
+                />
+                <YAxis
+                    tick={{ fontSize: 11, fill: '#6b7280' }}
+                    tickLine={false}
+                    axisLine={false}
+                />
+                <Tooltip content={<ForecastChartTooltip />} />
+                <Legend
+                    wrapperStyle={{ paddingTop: '15px' }}
+                    iconType="circle"
+                />
+                {boundaryIdx > 0 && (
+                    <ReferenceLine
+                        x={data[boundaryIdx]?.name}
+                        stroke="#6b7280"
+                        strokeDasharray="5 5"
+                        label={{ value: 'Tahmin Başlangıcı', position: 'top', fontSize: 10, fill: '#6b7280' }}
+                    />
+                )}
+                {/* Confidence band (shaded area between lower and upper) */}
+                <Area
+                    type="monotone"
+                    dataKey="upper"
+                    stroke="none"
+                    fill="url(#colorCI)"
+                    fillOpacity={1}
+                    name="Üst Sınır"
+                    connectNulls={false}
+                />
+                <Area
+                    type="monotone"
+                    dataKey="lower"
+                    stroke="none"
+                    fill="#ffffff"
+                    fillOpacity={1}
+                    name="Alt Sınır"
+                    connectNulls={false}
+                />
+                {/* Historical line */}
+                <Area
+                    type="monotone"
+                    dataKey="historical"
+                    stroke="#3b82f6"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#colorHistorical)"
+                    name="Geçmiş Satış"
+                    connectNulls={false}
+                />
+                {/* Predicted line */}
+                <Area
+                    type="monotone"
+                    dataKey="predicted"
+                    stroke="#8b5cf6"
+                    strokeWidth={2.5}
+                    strokeDasharray="5 3"
+                    fillOpacity={1}
+                    fill="url(#colorPredicted)"
+                    name="Tahmin"
+                    connectNulls={false}
+                />
+            </AreaChart>
+        </ResponsiveContainer>
     );
 };
 
