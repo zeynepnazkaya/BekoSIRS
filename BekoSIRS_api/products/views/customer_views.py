@@ -13,7 +13,8 @@ from django.db.models import Avg, F
 
 from products.models import (
     Product, ProductOwnership, Wishlist, WishlistItem,
-    ViewHistory, Review, Notification, Recommendation
+    ViewHistory, Review, Notification, Recommendation,
+    Category, UserCategoryPreference,
 )
 from products.serializers import (
     WishlistSerializer, WishlistItemSerializer,
@@ -593,6 +594,182 @@ class RecommendationViewSet(viewsets.ModelViewSet):
             'status': 'dismissed',
             'success': True,
             'message': 'Öneri reddedildi',
+        })
+
+    @action(detail=False, methods=['get'], url_path='bundle/(?P<product_id>[^/.]+)')
+    def bundle(self, request, product_id=None):
+        """
+        GET /api/v1/recommendations/bundle/{product_id}/
+
+        Verilen urunle birlikte sik satin alinan urunleri dondurur. Detay
+        sayfasinda "birlikte alinanlar" karusel'i icin kullanilir.
+
+        Co-occurrence dogrudan ProductOwnership tablosundan hesaplanir; sayilar
+        kac musteri iki urunu birlikte aldiysa onun toplaminda durur.
+        """
+        try:
+            product_id_int = int(product_id)
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'product_id must be an integer'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Hedef urunun varligini dogruluyoruz; sonuc bos olsa bile API'nin
+        # ne hakkinda bundle uretmeye calistigi anlamli olsun.
+        if not Product.objects.filter(id=product_id_int).exists():
+            return Response(
+                {'error': 'product not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Limit query parametresi opsiyoneldir; UI'da kac kart gosterilecegi
+        # istemcinin tasarim secimine birakilir, varsayilan makul kucuk tutulur.
+        try:
+            limit = int(request.query_params.get('limit', 5))
+        except (TypeError, ValueError):
+            limit = 5
+        limit = max(1, min(limit, 20))
+
+        from products.ml_recommender import get_recommender
+
+        # Kullanici daha once satin aldigi veya dismiss ettigi urunleri tekrar
+        # gormesin diye bundle sonucunu da onun gecmisine gore filtreliyoruz.
+        owner_owned = set(ProductOwnership.objects.filter(
+            customer=request.user,
+        ).values_list('product_id', flat=True))
+        dismissed_pids = set(Recommendation.objects.filter(
+            customer=request.user, dismissed=True,
+        ).values_list('product_id', flat=True))
+
+        recommender = get_recommender()
+        raw = recommender.get_co_purchase_products(
+            product_id_int,
+            top_n=limit + len(owner_owned) + len(dismissed_pids),
+            exclude_ids=owner_owned | dismissed_pids,
+        )
+
+        if not raw:
+            return Response({
+                'product_id': product_id_int,
+                'bundles': [],
+            })
+
+        pids = [item['product_id'] for item in raw][:limit]
+        product_map = {
+            p.id: p
+            for p in Product.objects.filter(id__in=pids).select_related('category')
+        }
+
+        bundles = []
+        for item in raw:
+            if len(bundles) >= limit:
+                break
+            product = product_map.get(item['product_id'])
+            if not product:
+                continue
+            bundles.append({
+                'product_id': product.id,
+                'name': product.name,
+                'brand': product.brand,
+                'price': str(product.price),
+                'category_name': product.category.name if product.category else None,
+                'co_purchase_count': item['co_purchase_count'],
+            })
+
+        return Response({
+            'product_id': product_id_int,
+            'bundles': bundles,
+        })
+
+    @action(
+        detail=False,
+        methods=['get', 'post', 'delete'],
+        url_path='onboarding/preferences',
+    )
+    def onboarding_preferences(self, request):
+        """
+        Kullanicinin onboarding sirasinda sectigi kategorileri yonetir.
+
+        GET    -> mevcut tercih listesini dondurur
+        POST   -> {"category_ids": [...]} govdesi ile tercihleri yazar
+        DELETE -> kullanicinin tum tercihlerini siler
+
+        Bu endpoint cold-start probleminin onune gecer: yeni kullanici hicbir
+        etkilesim yapmadan once 1-5 kategori secerek recommender'a kucuk bir
+        tohum verir. Etkilesim sayisi belli esige ulasinca recommender bu
+        sinyali otomatik olarak devre disi birakir.
+        """
+        if request.method == 'GET':
+            preferences = UserCategoryPreference.objects.filter(
+                customer=request.user,
+            ).select_related('category')
+            return Response({
+                'preferences': [
+                    {
+                        'category_id': pref.category_id,
+                        'category_name': pref.category.name,
+                    }
+                    for pref in preferences
+                ],
+            })
+
+        if request.method == 'DELETE':
+            UserCategoryPreference.objects.filter(customer=request.user).delete()
+            # Etkilesim cache'ini de temizliyoruz; aksi halde bir sonraki
+            # /recommendations/ cagrisi eski tercihler varmis gibi davranir.
+            from django.core.cache import cache as django_cache
+            django_cache.delete(f'ml_user_interactions_{request.user.id}')
+            return Response({
+                'success': True,
+                'message': 'preferences cleared',
+            })
+
+        # POST: yeni tercih listesi yazimi
+        category_ids = request.data.get('category_ids')
+        if not isinstance(category_ids, list) or not category_ids:
+            return Response(
+                {'error': 'category_ids must be a non-empty list'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Acik bir ust limit koyuyoruz; ama amac aliskanligin tohumu olmaktir,
+        # cok genis bir liste tum bonusu kullanir ve sinyali zayiflatir.
+        if len(category_ids) > 5:
+            return Response(
+                {'error': 'maximum 5 categories allowed'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        valid_ids = list(Category.objects.filter(
+            id__in=category_ids,
+        ).values_list('id', flat=True))
+
+        if not valid_ids:
+            return Response(
+                {'error': 'no valid categories provided'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Idempotent yazim: kullanicinin onceki tercihi silinir, yeni liste
+        # tek bir transaction'da yazilir. Boylece arka uca kismi guncelleme
+        # gibi belirsiz durumlar yansimaz.
+        UserCategoryPreference.objects.filter(customer=request.user).delete()
+        for cat_id in valid_ids:
+            UserCategoryPreference.objects.create(
+                customer=request.user,
+                category_id=cat_id,
+            )
+
+        # Recommender etkilesim cache'ini temizleyerek tercihlerin bir sonraki
+        # /recommendations/ cagrisinda hemen etkili olmasini sagliyoruz.
+        from django.core.cache import cache as django_cache
+        django_cache.delete(f'ml_user_interactions_{request.user.id}')
+
+        return Response({
+            'success': True,
+            'saved_count': len(valid_ids),
+            'category_ids': valid_ids,
         })
 
 
