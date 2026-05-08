@@ -888,6 +888,26 @@ class HybridRecommender:
     # oneri listesine girebilsin diye gecici bir kesif boost'u alir.
     NEW_PRODUCT_MAX_AGE_DAYS = 30
 
+    # Implicit negative sampling: kullanici son donemde bir urune bakmis ama
+    # ne wishlist'e eklemis ne de satin almistir. Bu pasif gozlem zayif bir
+    # negatif sinyaldir; recommender'in donup ayni urunu yeniden one cikarmasini
+    # yumusatmak icin kucuk bir cezayla skoru azaltiriz.
+    IMPLICIT_NEGATIVE_LOOKBACK_DAYS = 30
+    IMPLICIT_NEGATIVE_PENALTY = 0.15
+
+    # Time-of-day affinity: kullanicinin alistigi saat diliminde sik etkilesime
+    # girdigi kategoriler ufak bir bonus alir. Bonus duzeyi bilincli olarak
+    # dusuk tutulur cunku gercek niyet sinyallerini bastirmamasi gerekir.
+    TIME_AFFINITY_BOOST = 0.10
+    TIME_AFFINITY_TOP_CATEGORY_LIMIT = 2
+
+    # Onboarding tercihleri: yeni kullanicinin secimleri birinci elde etkilesim
+    # uretene kadar oneri listesini tamamen genel populer urunlerden korumak
+    # icin kullanilir. Kullanicinin etkilesimi olgunlasinca bu boost devreden
+    # cikarak gercek davranis sinyaline yer acar.
+    ONBOARDING_BOOST = 0.15
+    ONBOARDING_BOOST_MAX_INTERACTIONS = 5
+
     CACHE_TTL = getattr(settings, 'CACHE_TTL_LONG', 7200)
 
     def __new__(cls):
@@ -1127,6 +1147,36 @@ class HybridRecommender:
                 final_scores[pid] = final_scores.get(pid, 0) + boost
                 if boost > 0 and reasons.get(pid, (None,))[0] not in ('search', 'price'):
                     reasons[pid] = ('new', None)
+
+        # 7. Onboarding kategori tercihleri (cold-start tohumu)
+        # Sadece etkilesimi yetersiz kullanicilar icin uygulanir; aktif profilde
+        # tercih sinyali davranis sinyalini bastirmasin diye otomatik kapanir.
+        for pid, boost in self._get_onboarding_preference_boost(
+            user, user_interactions=user_interactions,
+        ).items():
+            if pid not in exclude_ids:
+                final_scores[pid] = final_scores.get(pid, 0) + boost
+                if boost > 0 and reasons.get(pid, (None,))[0] in (None, 'popular'):
+                    reasons[pid] = ('onboarding', None)
+
+        # 8. Time-of-day affinity bonusu (gun dilimi aliskanligi)
+        # Kucuk bonus secildi cunku amaci aliskanlik vurgulamak, gercek niyet
+        # sinyallerini ezmemek.
+        for pid, boost in self._get_time_affinity_boost(user).items():
+            if pid not in exclude_ids:
+                final_scores[pid] = final_scores.get(pid, 0) + boost
+                # Tema sinyali zayif oldugu icin sebep etiketini sadece daha
+                # spesifik bir sebep yoksa yaziyoruz.
+                if boost > 0 and reasons.get(pid, (None,))[0] in (None, 'popular'):
+                    reasons[pid] = ('time_affinity', None)
+
+        # 9. Implicit negative sampling (zayif eksi sinyal)
+        # Bakildi ama eylem alinmadi: skoru hafifce dusurerek ayni urunun
+        # listede tekrar tekrar one cikmasini yumusatiyoruz. Tamamen exclude
+        # etmemizin sebebi tek bakisla urunu mahkum etmemek.
+        for pid, penalty in self._get_implicit_negative_signals(user).items():
+            if pid in final_scores:
+                final_scores[pid] += penalty
 
         # Sonucu bicimlendir ve dondur
         # Tum kaynaklardan gelen puanlar birlestirilir ve son sirali API cevabina cevrilir.
@@ -1447,6 +1497,218 @@ class HybridRecommender:
 
         return boosts
 
+    # -----------------------------------------------------------------------
+    # Implicit negative sampling
+    # -----------------------------------------------------------------------
+    def _get_implicit_negative_signals(self, user):
+        """
+        Goruntulendi ama wishlist veya satin almaya donmemis urunler icin kucuk
+        bir ceza haritasi dondurur.
+
+        Args:
+            user: Sinyaller hesaplanacak kullanici nesnesi.
+
+        Returns:
+            {product_id: -penalty} sozlugu. Pozitif aksiyona donen urunler
+            cezadan muaf tutulur.
+
+        Bu yontem secildi cunku tek bir tiklamayi sert bir negatif sinyale
+        cevirmek riskli olur (tesaduf veya yanlis tiklama olabilir). Bunun
+        yerine yalnizca son IMPLICIT_NEGATIVE_LOOKBACK_DAYS gun penceresindeki
+        eylem disi goruntulemeler dusuk bir penalty olarak uygulanir.
+        """
+        from .models import ProductOwnership, ViewHistory, WishlistItem
+
+        cutoff = dt_datetime.now(dt_timezone.utc) - timedelta(
+            days=self.IMPLICIT_NEGATIVE_LOOKBACK_DAYS
+        )
+
+        viewed_pids = set(ViewHistory.objects.filter(
+            customer=user,
+            viewed_at__gte=cutoff,
+        ).values_list('product_id', flat=True))
+
+        if not viewed_pids:
+            return {}
+
+        # Sahip olunan ve wishlist'e eklenenler pozitif aksiyondur; bunlari
+        # cezalandirmak yanlis sinyal uretir, bu nedenle setten cikariyoruz.
+        positive_pids = set(ProductOwnership.objects.filter(
+            customer=user,
+            product_id__in=viewed_pids,
+        ).values_list('product_id', flat=True))
+
+        positive_pids.update(WishlistItem.objects.filter(
+            wishlist__customer=user,
+            product_id__in=viewed_pids,
+        ).values_list('product_id', flat=True))
+
+        ignored_pids = viewed_pids - positive_pids
+        return {pid: -self.IMPLICIT_NEGATIVE_PENALTY for pid in ignored_pids}
+
+    # -----------------------------------------------------------------------
+    # Time-of-day affinity
+    # -----------------------------------------------------------------------
+    @staticmethod
+    def _hour_bucket(hour):
+        """
+        24 saatlik bir zamani anlasilir bir gunduz dilimine cevirir.
+
+        Sabah, ogleden sonra, aksam ve gece secimi urun ekibine acikca
+        anlatilabilen ve kullanici aliskanliklarini yakalayan dort kovaya boler.
+        """
+        if 6 <= hour < 12:
+            return 'morning'
+        if 12 <= hour < 18:
+            return 'afternoon'
+        if 18 <= hour < 22:
+            return 'evening'
+        return 'night'
+
+    def _get_time_affinity_boost(self, user, now=None):
+        """
+        Kullanicinin gunun ilgili diliminde sik gezdigi kategorilerde kucuk
+        bir bonus uygular.
+
+        Args:
+            user: Bonus hesaplanacak kullanici.
+            now: Test edilebilirlik icin opsiyonel zaman damgasi.
+
+        Returns:
+            {product_id: TIME_AFFINITY_BOOST} sozlugu.
+
+        Bu sinyal aliskanlik temellidir; mesela aksam saatlerinde mutfak
+        kategorilerine daha sik bakan biri icin aksam kosusunda mutfak
+        urunleri kucuk bir bonus alir. Bonus duzeyi dusuk secildi cunku
+        gercek ilgi sinyallerini ezecek kadar guclu olmamasi gerekir.
+        """
+        from .models import ViewHistory, Product
+
+        reference_time = now or dt_datetime.now(dt_timezone.utc)
+        current_bucket = self._hour_bucket(reference_time.hour)
+
+        bucket_categories = {}
+        view_history = ViewHistory.objects.filter(
+            customer=user,
+        ).select_related('product__category').values(
+            'product__category_id', 'viewed_at', 'view_count',
+        )
+
+        for vh in view_history:
+            cat_id = vh.get('product__category_id')
+            viewed_at = vh.get('viewed_at')
+            if cat_id is None or viewed_at is None:
+                continue
+            bucket = self._hour_bucket(viewed_at.hour)
+            counts = bucket_categories.setdefault(bucket, {})
+            counts[cat_id] = counts.get(cat_id, 0) + (vh.get('view_count') or 1)
+
+        if current_bucket not in bucket_categories:
+            return {}
+
+        # Bu kovada en sik etkilesime giren ilk birkac kategori bonusu alir.
+        # Daha fazlasi kullanicinin aliskanligindan ziyade gurultu olur.
+        sorted_cats = sorted(
+            bucket_categories[current_bucket].items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        top_cat_ids = {cat_id for cat_id, _ in sorted_cats[: self.TIME_AFFINITY_TOP_CATEGORY_LIMIT]}
+
+        if not top_cat_ids:
+            return {}
+
+        matched_ids = Product.objects.filter(
+            category_id__in=top_cat_ids,
+        ).values_list('id', flat=True)
+        return {pid: self.TIME_AFFINITY_BOOST for pid in matched_ids}
+
+    # -----------------------------------------------------------------------
+    # Onboarding category preferences (cold-start seed)
+    # -----------------------------------------------------------------------
+    def _get_onboarding_preference_boost(self, user, user_interactions=None):
+        """
+        Onboarding sirasinda secilen kategorilerdeki urunlere kucuk bir bonus
+        uygular.
+
+        Args:
+            user: Tercihleri okunacak kullanici.
+            user_interactions: Onceden hesaplanmis etkilesim sozlugu (opsiyonel).
+
+        Returns:
+            {product_id: ONBOARDING_BOOST} sozlugu.
+
+        Bonus yalnizca cold start ve light kullanicilar icin uygulanir; aktif
+        kullanicilarda bu sinyal davranis sinyalini bastirmamali, dolayisiyla
+        belirli bir etkilesim esiginden sonra otomatik olarak devre disi kalir.
+        """
+        from .models import UserCategoryPreference, Product
+
+        if user_interactions is None:
+            user_interactions = self._get_user_interactions(user)
+
+        if (
+            self._count_meaningful_interactions(user_interactions)
+            >= self.ONBOARDING_BOOST_MAX_INTERACTIONS
+        ):
+            return {}
+
+        preferred_cat_ids = list(UserCategoryPreference.objects.filter(
+            customer=user,
+        ).values_list('category_id', flat=True))
+
+        if not preferred_cat_ids:
+            return {}
+
+        matched_ids = Product.objects.filter(
+            category_id__in=preferred_cat_ids,
+        ).values_list('id', flat=True)
+        return {pid: self.ONBOARDING_BOOST for pid in matched_ids}
+
+    # -----------------------------------------------------------------------
+    # Bundle co-purchase recommendations
+    # -----------------------------------------------------------------------
+    def get_co_purchase_products(self, product_id, top_n=5, exclude_ids=None):
+        """
+        Verilen urunle birlikte sik satin alinan diger urunleri dondurur.
+
+        Args:
+            product_id: Demir koc urununun kimligi.
+            top_n: Donulecek bundle uzunlugu.
+            exclude_ids: Sonuctan haric tutulacak urun kimlikleri (opsiyonel).
+
+        Returns:
+            [{'product_id': int, 'co_purchase_count': int}, ...] listesi.
+
+        Co-occurrence yontemi secildi cunku derin bir model gerektirmeden
+        anlasilabilir bir esya esleme uretir; iki urunu ayni musteriler kac
+        kez beraber satin almis bilgisi UI'ya rahatca seffaflastirilabilir.
+        """
+        from .models import ProductOwnership
+        from collections import Counter
+
+        exclude = set(exclude_ids or [])
+        exclude.add(product_id)
+
+        owner_ids = list(ProductOwnership.objects.filter(
+            product_id=product_id,
+        ).values_list('customer_id', flat=True))
+
+        if not owner_ids:
+            return []
+
+        co_pids = ProductOwnership.objects.filter(
+            customer_id__in=owner_ids,
+        ).exclude(
+            product_id__in=exclude,
+        ).values_list('product_id', flat=True)
+
+        counter = Counter(co_pids)
+        return [
+            {'product_id': pid, 'co_purchase_count': count}
+            for pid, count in counter.most_common(top_n)
+        ]
+
     def _normalize_metric_input(self, recommendation):
         """
         Oneri payload'unu metrik hesaplamaya uygun basit alanlara indirger.
@@ -1643,6 +1905,14 @@ class HybridRecommender:
                 if cat_name:
                     return f"Yeni eklenen {cat_name} ürünü"
                 return "Yeni gelen ürün"
+            elif source == 'onboarding':
+                if cat_name:
+                    return f"Sectiginiz {cat_name} kategorisinden"
+                return "Tercih ettiginiz kategoriden"
+            elif source == 'time_affinity':
+                if cat_name:
+                    return f"Bu saatte {cat_name} kategorisini sevdiniz"
+                return "Bu saatte ilgilendiginiz urun"
             else:
                 if cat_name:
                     return f"{cat_name} — sizin için seçildi"
