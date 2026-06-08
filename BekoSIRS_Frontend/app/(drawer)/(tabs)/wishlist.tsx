@@ -96,8 +96,7 @@ const WishlistScreen = () => {
     } catch (error) {
       console.log('View recording failed:', error);
     }
-    // Navigate to product detail if you have that screen
-    // router.push(`/product/${productId}`);
+    router.push(`/product/${productId}`);
   };
 
   const renderItem = ({ item }: { item: WishlistItem }) => {

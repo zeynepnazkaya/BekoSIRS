@@ -75,6 +75,8 @@ export default function ProductDetailScreen() {
   const [averageRating, setAverageRating] = useState(0);
   const [similarProducts, setSimilarProducts] = useState<SimilarProduct[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
+  const [translatedComments, setTranslatedComments] = useState<Record<number, string>>({});
+  const [translatingIds, setTranslatingIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (id) {
@@ -222,6 +224,30 @@ export default function ProductDetailScreen() {
     }
   };
 
+  const translateComment = async (reviewId: number, comment: string) => {
+    if (translatedComments[reviewId]) {
+      setTranslatedComments(prev => { const n = { ...prev }; delete n[reviewId]; return n; });
+      return;
+    }
+    setTranslatingIds(prev => new Set(prev).add(reviewId));
+    try {
+      const sourceLang = language === 'tr' ? 'tr' : 'en';
+      const targetLang = language === 'tr' ? 'en' : 'tr';
+      const res = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(comment)}&langpair=${sourceLang}|${targetLang}`
+      );
+      const data = await res.json();
+      const translated = data.responseData?.translatedText;
+      if (translated) {
+        setTranslatedComments(prev => ({ ...prev, [reviewId]: translated }));
+      }
+    } catch {
+      // sessiz hata
+    } finally {
+      setTranslatingIds(prev => { const n = new Set(prev); n.delete(reviewId); return n; });
+    }
+  };
+
   const renderStars = (rating: number, size: number = 16, interactive: boolean = false) => {
     const stars = [];
     for (let i = 1; i <= 5; i++) {
@@ -264,11 +290,16 @@ export default function ProductDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <Stack.Screen 
+      <Stack.Screen
         options={{
           headerTitle: t('product.headerTitle'),
           headerBackTitle: t('common.back'),
-        }} 
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={{ paddingLeft: 8 }}>
+              <FontAwesome name="arrow-left" size={20} color="#fff" />
+            </TouchableOpacity>
+          ),
+        }}
       />
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Wishlist Button Overlay on Image — hidden if already owned/assigned */}
@@ -404,7 +435,29 @@ export default function ProductDetailScreen() {
                       {renderStars(review.rating, 14)}
                     </View>
                     {review.comment && (
-                      <Text style={styles.reviewComment}>{review.comment}</Text>
+                      <View>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                          <Text style={[styles.reviewComment, { flex: 1 }]}>{review.comment}</Text>
+                          <TouchableOpacity
+                            onPress={() => translateComment(review.id, review.comment)}
+                            style={{ paddingTop: 2 }}
+                          >
+                            {translatingIds.has(review.id)
+                              ? <ActivityIndicator size="small" color="#9CA3AF" />
+                              : <FontAwesome
+                                  name="language"
+                                  size={16}
+                                  color={translatedComments[review.id] ? '#111827' : '#9CA3AF'}
+                                />
+                            }
+                          </TouchableOpacity>
+                        </View>
+                        {translatedComments[review.id] && (
+                          <Text style={[styles.reviewComment, { color: '#6B7280', marginTop: 6, fontStyle: 'italic' }]}>
+                            {translatedComments[review.id]}
+                          </Text>
+                        )}
+                      </View>
                     )}
                     <Text style={styles.reviewDate}>
                       {new Date(review.created_at).toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US')}

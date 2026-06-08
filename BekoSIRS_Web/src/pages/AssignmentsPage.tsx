@@ -387,6 +387,9 @@ export default function AssignmentsPage() {
     };
 
     const autoPlaceNewAssignment = async (assignmentId: number) => {
+        if (!selectedDepotId) {
+            return;
+        }
         const planRes = await assignmentAPI.autoPlan({
             start_date: calendarWeekStart,
             allowed_weekdays: selectedWeekdays,
@@ -395,9 +398,7 @@ export default function AssignmentsPage() {
             assignment_ids: [assignmentId],
         });
         const plan = planRes.data;
-        if (!plan?.days?.length) {
-            throw new Error("Yeni atama için plan oluşturulamadı.");
-        }
+        if (!plan?.days?.length) return;
         await assignmentAPI.approvePlan(plan.days, plan.summary);
     };
 

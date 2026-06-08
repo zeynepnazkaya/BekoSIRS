@@ -97,7 +97,6 @@ const PopularProductCard = ({ item, router, compareMode, isSelected, onCompareSe
 
 interface HomeListHeaderProps {
   searchQuery: string;
-  setSearchQuery: (text: string) => void;
   popularProducts: Product[];
   categories: Category[];
   selectedCategory: number | null;
@@ -107,17 +106,13 @@ interface HomeListHeaderProps {
   clearFilters: () => void;
   recommendedProducts: any[];
   router: Router;
-  isSearching: boolean;
   compareMode: boolean;
-  setCompareMode: (v: boolean) => void;
-  compareCount: number;
   compareProducts: Product[];
   toggleCompareProduct: (p: Product) => void;
 }
 
 const HomeListHeader = ({
   searchQuery,
-  setSearchQuery,
   popularProducts,
   categories,
   selectedCategory,
@@ -127,49 +122,11 @@ const HomeListHeader = ({
   clearFilters,
   recommendedProducts,
   router,
-  isSearching,
   compareMode,
-  setCompareMode,
-  compareCount,
   compareProducts,
   toggleCompareProduct,
 }: HomeListHeaderProps) => (
   <View style={styles.headerContainer}>
-    {/* Arama Kutusu */}
-    <View style={styles.searchContainer}>
-      <FontAwesome name="search" size={16} color="#9CA3AF" style={styles.searchIcon} />
-      <TextInput
-        style={styles.searchInput}
-        placeholder={t('home.searchPlaceholder')}
-        placeholderTextColor="#9CA3AF"
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        autoCorrect={false}
-        autoCapitalize="none"
-      />
-      {isSearching && (
-        <ActivityIndicator size="small" color="#9CA3AF" style={{ marginRight: 8 }} />
-      )}
-      {searchQuery.length > 0 && !isSearching && (
-        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-          <FontAwesome name="times-circle" size={16} color="#9CA3AF" />
-        </TouchableOpacity>
-      )}
-    </View>
-
-    {/* Compare Mode Toggle */}
-    {!searchQuery && (
-      <TouchableOpacity
-        style={[styles.compareToggle, compareMode && styles.compareToggleActive]}
-        onPress={() => setCompareMode(!compareMode)}
-      >
-        <FontAwesome name="columns" size={14} color={compareMode ? '#fff' : '#6366F1'} />
-        <Text style={[styles.compareToggleText, compareMode && styles.compareToggleTextActive]}>
-          {compareMode ? `Karşılaştırma Modu (${compareCount}/2)` : 'Ürün Karşılaştır'}
-        </Text>
-      </TouchableOpacity>
-    )}
-
     {/* Suggested for You Section - ML driven */}
     {recommendedProducts.length > 0 && !searchQuery && (
       <View style={styles.popularSection}>
@@ -457,6 +414,9 @@ const HomeScreen = () => {
 
     const timer = setTimeout(() => {
       searchProducts(searchQuery, selectedCategory);
+      if (searchQuery.trim().length > 2) {
+        api.post('api/v1/search-history/', { query: searchQuery.trim() }).catch(() => {});
+      }
     }, 300); // Reduced debounce for faster response
 
     return () => clearTimeout(timer);
@@ -548,11 +508,10 @@ const HomeScreen = () => {
         keyExtractor={(item) => item.id.toString()}
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={[styles.list, compareMode && { paddingBottom: 100 }]}
+        contentContainerStyle={[styles.list, { paddingBottom: compareMode ? 240 : 88 }]}
         ListHeaderComponent={
           <HomeListHeader
             searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
             popularProducts={popularProducts}
             categories={categories}
             selectedCategory={selectedCategory}
@@ -562,10 +521,7 @@ const HomeScreen = () => {
             clearFilters={clearFilters}
             recommendedProducts={recommendedProducts}
             router={router}
-            isSearching={isSearching}
             compareMode={compareMode}
-            setCompareMode={(v) => { if (!v) handleExitCompareMode(); else setCompareMode(true); }}
-            compareCount={compareProducts.length}
             compareProducts={compareProducts}
             toggleCompareProduct={toggleCompareProduct}
           />
@@ -593,9 +549,9 @@ const HomeScreen = () => {
         }
       />
 
-      {/* Compare Bottom Bar */}
+      {/* Compare Bottom Bar - positioned above sticky search bar */}
       {compareMode && (
-        <View style={styles.compareBar}>
+        <View style={[styles.compareBar, { bottom: 68 }]}>
           <View style={styles.compareBarProducts}>
             {compareProducts.map(p => (
               <View key={p.id} style={styles.compareBarItem}>
@@ -641,6 +597,36 @@ const HomeScreen = () => {
           </View>
         </View>
       )}
+
+      {/* Sticky Bottom Search + Compare Bar */}
+      <View style={styles.stickyBottomBar}>
+        <View style={styles.stickySearchContainer}>
+          <FontAwesome name="search" size={15} color="#9CA3AF" style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.stickySearchInput}
+            placeholder={t('home.searchPlaceholder')}
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {isSearching && (
+            <ActivityIndicator size="small" color="#9CA3AF" style={{ marginRight: 4 }} />
+          )}
+          {searchQuery.length > 0 && !isSearching && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
+              <FontAwesome name="times-circle" size={15} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[styles.stickyCompareBtn, compareMode && styles.stickyCompareBtnActive]}
+          onPress={() => compareMode ? handleExitCompareMode() : setCompareMode(true)}
+        >
+          <FontAwesome name="columns" size={15} color={compareMode ? '#fff' : '#6366F1'} />
+        </TouchableOpacity>
+      </View>
 
       <CompareModal
         visible={showCompareModal}
@@ -1046,6 +1032,56 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 14,
     fontWeight: '600',
+  },
+  stickyBottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 6,
+    gap: 8,
+  },
+  stickySearchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 42,
+  },
+  stickySearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '500',
+    height: '100%',
+  },
+  stickyCompareBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  stickyCompareBtnActive: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
   },
 });
 

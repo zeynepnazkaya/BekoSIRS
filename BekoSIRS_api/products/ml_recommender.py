@@ -785,7 +785,7 @@ class ContentBasedModel:
         scores = {}
         for i, score in enumerate(sim_scores):
             pid = self.products_df.iloc[i]['id']
-            if pid != product_id and score > 0.05:
+            if pid != product_id and score > 0.01:
                 scores[pid] = float(score)
 
         return dict(sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n])
