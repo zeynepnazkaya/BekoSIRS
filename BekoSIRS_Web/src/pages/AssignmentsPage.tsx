@@ -86,7 +86,7 @@ interface PreparedRoute {
 
 /* ============ Component ============ */
 export default function AssignmentsPage() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
 
     /* --- Main Tab --- */
     const [mainTab, setMainTab] = useState<'unscheduled' | 'planning'>('unscheduled');
@@ -268,11 +268,26 @@ export default function AssignmentsPage() {
         if (!dateStr) return "-";
         return new Date(dateStr).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
     };
+    
+    const formatDeliveryStatus = (status?: string, defaultDisplay?: string) => {
+        if (!status) return "-";
+        switch(status) {
+            case 'WAITING': return t('deliveries.statusWaiting');
+            case 'OUT_FOR_DELIVERY': return t('deliveries.statusOut');
+            case 'DELIVERED': return t('deliveries.statusDelivered');
+            case 'FAILED': return t('deliveries.statusFailed');
+            case 'PLANNED': return t('deliveries.statusPlanned');
+            case 'IN_PROGRESS': return t('deliveries.statusInProgress');
+            case 'COMPLETED': return t('deliveries.statusCompleted');
+            default: return defaultDisplay || status || "-";
+        }
+    };
+
     const formatDuration = (minutes?: number) => {
-        if (!minutes) return "0 dk";
+        if (!minutes) return `0 ${t('assignments.min')}`;
         const hours = Math.floor(minutes / 60);
         const mins = minutes % 60;
-        return hours ? `${hours} saat ${mins} dk` : `${mins} dk`;
+        return hours ? `${hours} ${t('assignments.hour')} ${mins} ${t('assignments.min')}` : `${mins} ${t('assignments.min')}`;
     };
     const formatCustomerLabel = (customer: Customer) => {
         const name = customer.full_name || `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || customer.username;
@@ -283,13 +298,13 @@ export default function AssignmentsPage() {
         return `${product.name}${model}`;
     };
     const weekdayOptions = [
-        { id: 0, label: "Pzt" },
-        { id: 1, label: "Sal" },
-        { id: 2, label: "Çar" },
-        { id: 3, label: "Per" },
-        { id: 4, label: "Cum" },
-        { id: 5, label: "Cmt" },
-        { id: 6, label: "Paz" },
+        { id: 0, label: t('assignments.dayMon') },
+        { id: 1, label: t('assignments.dayTue') },
+        { id: 2, label: t('assignments.dayWed') },
+        { id: 3, label: t('assignments.dayThu') },
+        { id: 4, label: t('assignments.dayFri') },
+        { id: 5, label: t('assignments.daySat') },
+        { id: 6, label: t('assignments.daySun') },
     ];
     const toggleWeekday = (day: number) => {
         setSelectedWeekdays(prev =>
@@ -313,7 +328,7 @@ export default function AssignmentsPage() {
             return {
                 ...day,
                 date: isoDate,
-                displayDate: dateValue.toLocaleDateString("tr-TR", { day: "2-digit", month: "short" }),
+                displayDate: dateValue.toLocaleDateString(i18n.language === 'tr' ? 'tr-TR' : 'en-US', { day: '2-digit', month: 'short' }),
                 isToday: diff === 0,
                 isActive: selectedWeekdays.includes(day.id),
             };
@@ -361,7 +376,7 @@ export default function AssignmentsPage() {
 
     const rebalanceWeeklyCalendar = async (weekdays = selectedWeekdays, showSuccess = true) => {
         if (!weekdays.length) {
-            showToast("error", "En az bir teslimat günü aktif olmalı.");
+            showToast("error", t('assignments.errAtLeastOneDay'));
             return;
         }
         setCalendarRebalancing(true);
@@ -372,11 +387,11 @@ export default function AssignmentsPage() {
                 max_hours_per_day: maxHoursPerDay,
                 depot_id: selectedDepotId,
             });
-            if (showSuccess) showToast("success", res.data.message || "Haftalık takvim yeniden dağıtıldı.");
+            if (showSuccess) showToast("success", res.data.message || t('assignments.calendarRebalanced'));
             await fetchAll();
             if (mainTab === 'planning') fetchDeliveries();
         } catch (err: any) {
-            showToast("error", err.response?.data?.error || "Haftalık takvim yeniden dağıtılamadı.");
+            showToast("error", err.response?.data?.error || t('assignments.errCalendarRebalance'));
         } finally {
             setCalendarRebalancing(false);
         }
@@ -387,7 +402,7 @@ export default function AssignmentsPage() {
             ? selectedWeekdays.filter(item => item !== day)
             : [...selectedWeekdays, day].sort((a, b) => a - b);
         if (!next.length) {
-            showToast("error", "En az bir teslimat günü aktif kalmalı.");
+            showToast("error", t('assignments.errAtLeastOneDayRemain'));
             return;
         }
         setSelectedWeekdays(next);
@@ -408,7 +423,7 @@ export default function AssignmentsPage() {
         setDragOverDate(null);
 
         if (!toDateIsActive) {
-            showToast("error", "Bu gün teslimata kapalı. Önce günü aktif yapın.");
+            showToast("error", t('assignments.errDayClosed'));
             return;
         }
         if (draggingRoute.fromDate === toDate) return;
@@ -421,7 +436,7 @@ export default function AssignmentsPage() {
             .filter((id): id is number => Boolean(id));
 
         if (!movedDeliveryIds.length) {
-            showToast("error", "Bu rotada teslimat bilgisi bulunamadı.");
+            showToast("error", t('assignments.errNoDeliveryInRoute'));
             return;
         }
 
@@ -455,10 +470,10 @@ export default function AssignmentsPage() {
             const movedCount = movedDeliveryIds.length;
             const mergedCount = existingDeliveryIds.length;
             const mergeNote = mergedCount > 0 ? ` (mevcut ${mergedCount} teslimatla birleştirildi)` : "";
-            showToast("success", `${movedCount} teslimat ${formatDate(fromDate)} → ${formatDate(toDate)} tarihine taşındı${mergeNote}.`);
+            showToast("success", t('assignments.deliveryMoved', { count: movedCount, from: formatDate(fromDate), to: formatDate(toDate) }) + mergeNote);
             fetchAll();
         } catch (err: any) {
-            showToast("error", err.response?.data?.error || "Teslimat taşınırken hata oluştu.");
+            showToast("error", err.response?.data?.error || t('assignments.errMoveDelivery'));
             fetchAll();
         } finally {
             setDragMoving(false);
@@ -507,7 +522,7 @@ export default function AssignmentsPage() {
             setNewSaleModal(false);
             resetSaleForm();
             await fetchAll();
-            showToast("success", "Yeni satış otomatik teslimat takvimine yerleştirildi.");
+            showToast("success", t('assignments.saleAutoPlanned'));
         } catch (err: any) {
             showToast("error", err.response?.data?.detail || err.message || t('assignments.createError'));
         } finally { setSubmitting(false); }
@@ -660,14 +675,14 @@ export default function AssignmentsPage() {
         setSubmitting(true);
         try {
             await deliveryRouteAPI.delete(routeDeleteTarget.id);
-            showToast("success", "Hazırlanan plan silindi. Teslimatlar tekrar bekleme durumuna alındı.");
+            showToast("success", t('assignments.planDeleted'));
             setRouteDeleteModal(false);
             setRouteDeleteTarget(null);
             if (expandedPreparedRoute === routeDeleteTarget.id) setExpandedPreparedRoute(null);
             fetchAll();
             if (mainTab === 'planning' && planningDate === routeDeleteTarget.date) fetchDeliveries();
         } catch (err: any) {
-            showToast("error", err.response?.data?.error || "Plan silinemedi");
+            showToast("error", err.response?.data?.error || t('assignments.errPlanDelete'));
         } finally { setSubmitting(false); }
     };
 
@@ -697,7 +712,7 @@ export default function AssignmentsPage() {
             const errData = err.response?.data;
             const noCoords = errData?.warnings?.no_coordinates?.length ?? 0;
             if (noCoords > 0) {
-                showToast("error", errData?.error || `${noCoords} siparişin müşteri koordinatı eksik.`);
+                showToast("error", errData?.error || t('assignments.errMissingCoord', { count: noCoords }));
             } else {
                 showToast("error", errData?.error || t('assignments.autoPlanEmpty'));
             }
@@ -755,7 +770,7 @@ export default function AssignmentsPage() {
                 <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center">
                     <div className="bg-white rounded-xl px-8 py-6 shadow-2xl flex items-center gap-4">
                         <Loader2 className="animate-spin text-blue-600" size={28} />
-                        <span className="text-base font-semibold text-gray-800">Teslimat taşınıyor...</span>
+                        <span className="text-base font-semibold text-gray-800">{t('assignments.movingDelivery')}</span>
                     </div>
                 </div>
             )}
@@ -812,10 +827,10 @@ export default function AssignmentsPage() {
                                 <div className="min-w-[200px]">
                                     <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
                                         <Route size={18} className="text-emerald-600" />
-                                        Planlama Merkezi
+                                        {t('assignments.planningCenter')}
                                     </h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Yeni satışlar otomatik olarak takvime eklenir. Teslimat günlerini
+                                        Yeni satışlar otomatik olarak takvime eklenir. {t('assignments.deliveryDays')}ni
                                         değiştirince planı yeniden dağıtabilirsiniz.
                                     </p>
                                     <div className="mt-4">
@@ -830,7 +845,7 @@ export default function AssignmentsPage() {
                                         ) : (
                                             <div className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
                                                 <CheckCircle size={18} className="shrink-0 text-emerald-500" />
-                                                <p className="text-sm font-medium text-emerald-700">Tüm siparişler planlandı</p>
+                                                <p className="text-sm font-medium text-emerald-700">{t('assignments.allOrdersPlanned')}</p>
                                             </div>
                                         )}
                                     </div>
@@ -842,13 +857,13 @@ export default function AssignmentsPage() {
                                 <div className="flex-1">
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                                         <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Maks. saat/gün</label>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">{t('assignments.maxHoursPerDay')}</label>
                                             <input type="number" min={1} max={14} step={0.5} value={maxHoursPerDay}
                                                 onChange={(e) => setMaxHoursPerDay(Number(e.target.value))}
                                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Çıkış deposu</label>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">{t('assignments.departureDepot')}</label>
                                             <select value={selectedDepotId}
                                                 onChange={(e) => setSelectedDepotId(e.target.value ? Number(e.target.value) : "")}
                                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
@@ -857,7 +872,7 @@ export default function AssignmentsPage() {
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Teslimat günleri</label>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">{t('assignments.deliveryDays')}</label>
                                             <div className="flex flex-wrap gap-1">
                                                 {weekdayOptions.map(day => (
                                                     <button key={day.id} type="button" onClick={() => toggleCalendarDay(day.id)}
@@ -889,10 +904,10 @@ export default function AssignmentsPage() {
                                                 disabled={calendarRebalancing || !selectedWeekdays.length}
                                                 className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
                                                 {calendarRebalancing ? <Loader2 className="animate-spin" size={16} /> : <Route size={16} />}
-                                                {calendarRebalancing ? "Dağıtılıyor..." : "Mevcut Planı Yeniden Dağıt"}
+                                                {calendarRebalancing ? t('assignments.rebalancing') : t('assignments.rebalanceCurrentPlan')}
                                             </button>
                                             <span className="mt-1 text-xs text-gray-400 max-w-[260px]">
-                                                Açık (teslimata çıkmamış) tüm rotaları, seçili teslimat günlerine ve günlük süre bütçesine göre yeniden optimize eder.
+                                                {t('assignments.rebalanceDesc')}
                                             </span>
                                         </div>
                                     </div>
@@ -907,13 +922,13 @@ export default function AssignmentsPage() {
                                 <div>
                                     <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
                                         <Calendar size={18} className="text-blue-600" />
-                                        Haftalık Teslimat Takvimi
+                                        {t('assignments.weeklyDeliveryCalendar')}
                                     </h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Aktif/Pasif düğmesiyle günü kapatın — o güne düşen teslimatlar açık günlere taşınır.
+                                        {t('assignments.calendarDesc')}
                                     </p>
                                 </div>
-                                <p className="text-sm text-gray-400 hidden lg:block">{calendarWeekStart} haftası</p>
+                                <p className="text-sm text-gray-400 hidden lg:block">{t('assignments.weekOf', { date: calendarWeekStart })}</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7">
                                 {rollingWeekDays.map(day => {
@@ -944,7 +959,7 @@ export default function AssignmentsPage() {
                                                 <div>
                                                     <div className="flex items-center gap-2">
                                                         <h3 className="font-bold text-gray-900">{day.label}</h3>
-                                                        {day.isToday && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">Bugün</span>}
+                                                        {day.isToday && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{t('assignments.today')}</span>}
                                                     </div>
                                                     <p className="text-xs text-gray-500">{day.displayDate}</p>
                                                 </div>
@@ -952,7 +967,7 @@ export default function AssignmentsPage() {
                                                     className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors disabled:opacity-50 ${day.isActive
                                                         ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                                                         : "bg-white text-gray-500 border-gray-200"}`}>
-                                                    {day.isActive ? "Aktif" : "Pasif"}
+                                                    {day.isActive ? t('assignments.active') : t('assignments.passive')}
                                                 </button>
                                             </div>
 
@@ -962,7 +977,7 @@ export default function AssignmentsPage() {
                                                         ${dayRoutes.length > 0
                                                             ? "border-emerald-400 bg-emerald-50 text-emerald-700"
                                                             : "border-blue-400 bg-blue-50 text-blue-600"}`}>
-                                                        {dayRoutes.length > 0 ? `↓ Mevcut rotaya ekle (${dayRoutes.reduce((s, r) => s + (r.stop_count || r.stops?.length || 0), 0)} durak)` : "↓ Buraya bırak"}
+                                                        {dayRoutes.length > 0 ? `↓ Mevcut rotaya ekle (${dayRoutes.reduce((s, r) => s + (r.stop_count || r.stops?.length || 0), 0)} {t('assignments.stop')})` : t('assignments.dropHere')}
                                                     </div>
                                                 )}
                                                 {dayRoutes.length > 0 && day.isActive ? dayRoutes.map(route => (
@@ -976,7 +991,7 @@ export default function AssignmentsPage() {
                                                     >
                                                         <div className="flex items-center justify-between gap-2">
                                                             <span className="text-sm font-semibold text-gray-900">
-                                                                {route.stop_count || route.stops?.length || 0} durak
+                                                                {route.stop_count || route.stops?.length || 0} {t('assignments.stop')}
                                                             </span>
                                                             <span className="text-xs text-gray-500">{formatDuration(route.total_duration_min)}</span>
                                                         </div>
@@ -984,19 +999,19 @@ export default function AssignmentsPage() {
                                                             {Number(route.total_distance_km || 0)} km
                                                         </div>
                                                         <div className={`mt-1.5 text-xs font-medium ${route.driver_name ? "text-emerald-700" : "text-amber-600"}`}>
-                                                            {route.driver_name || "Şoför atanmadı"}
+                                                            {route.driver_name || t('assignments.noDriverAssigned')}
                                                         </div>
                                                     </div>
                                                 )) : !isDragOver ? (
                                                     <div className="rounded-lg border border-dashed border-gray-200 px-3 py-8 text-center text-sm text-gray-400">
-                                                        {day.isActive ? "Plan yok" : "Teslimata kapalı"}
+                                                        {day.isActive ? t('assignments.noPlan') : t('assignments.closedForDelivery')}
                                                     </div>
                                                 ) : null}
                                             </div>
 
                                             {dayRoutes.length > 0 && (
                                                 <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                                                    {dayStops} teslimat • {formatDuration(dayMinutes)}
+                                                    {dayStops} {t('assignments.deliveries')} • {formatDuration(dayMinutes)}
                                                 </div>
                                             )}
                                         </div>
@@ -1011,10 +1026,10 @@ export default function AssignmentsPage() {
                                 <div>
                                     <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
                                         <Navigation size={18} className="text-blue-600" />
-                                        Hazırlanan planlar
+                                        {t('assignments.preparedPlans')}
                                     </h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Onaylanmış rotaları, durakları ve şoför durumunu buradan takip edin.
+                                        {t('assignments.preparedPlansDesc')}
                                     </p>
                                 </div>
                                 <div className="text-sm text-gray-500">
@@ -1054,15 +1069,15 @@ export default function AssignmentsPage() {
                                                                 </span>
                                                                 {!route.driver_name && (
                                                                     <span className="px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200 text-xs font-semibold">
-                                                                        Şoför atanmadı
+                                                                        {t('assignments.noDriverAssigned')}
                                                                     </span>
                                                                 )}
                                                             </div>
                                                             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                                                                <span>{route.stop_count || stops.length} durak</span>
+                                                                <span>{route.stop_count || stops.length} {t('assignments.stop')}</span>
                                                                 <span>{Number(route.total_distance_km || 0)} km</span>
                                                                 <span>{formatDuration(route.total_duration_min)}</span>
-                                                                <span>{route.driver_name || 'Atama bekliyor'}</span>
+                                                                <span>{route.driver_name || t('assignments.waitingAssignment')}</span>
                                                             </div>
                                                         </div>
                                                     </button>
@@ -1070,15 +1085,15 @@ export default function AssignmentsPage() {
                                                     <div className="flex flex-wrap gap-2">
                                                         <button type="button" onClick={() => openPreparedRoute(route)}
                                                             className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-semibold transition-colors">
-                                                            <Calendar size={16} /> Tarihi aç
+                                                            <Calendar size={16} /> {t('assignments.openDate')}
                                                         </button>
                                                         <button type="button" onClick={() => openPreparedRouteDriverModal(route)} disabled={!stops.length}
                                                             className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
-                                                            <UserCheck size={16} /> Şoför ata
+                                                            <UserCheck size={16} /> {t('assignments.assignDriver')}
                                                         </button>
                                                         <button type="button" onClick={() => openPreparedRouteDeleteModal(route)}
                                                             className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg text-sm font-semibold transition-colors">
-                                                            <Trash2 size={16} /> Sil
+                                                            <Trash2 size={16} /> {t('assignments.btnDelete')}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1093,18 +1108,18 @@ export default function AssignmentsPage() {
                                                                 <div className="min-w-0">
                                                                     <div className="font-medium text-gray-900">{stop.delivery?.customer_name || 'Müşteri bilgisi yok'}</div>
                                                                     <div className="mt-0.5 text-xs text-gray-500 truncate">
-                                                                        {stop.delivery?.product_name || 'Ürün'} • {stop.delivery?.quantity || 1} adet • {stop.delivery?.customer_address || 'Adres yok'}
+                                                                        {stop.delivery?.product_name || t('assignments.product')} • {stop.delivery?.quantity || 1} {t('assignments.quantitySuffix')} • {stop.delivery?.customer_address || t('assignments.noAddress')}
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2 text-xs text-gray-500 md:justify-end">
                                                                     <span className="rounded-full bg-white px-2 py-1">{Number(stop.distance_from_previous_km || 0)} km</span>
-                                                                    <span className="rounded-full bg-white px-2 py-1">{stop.duration_from_previous_min || 0} dk</span>
-                                                                    <span className="rounded-full bg-white px-2 py-1">{stop.delivery?.status_display || stop.delivery?.status || '-'}</span>
+                                                                    <span className="rounded-full bg-white px-2 py-1">{stop.duration_from_previous_min || 0} {t('assignments.min')}</span>
+                                                                    <span className="rounded-full bg-white px-2 py-1">{formatDeliveryStatus(stop.delivery?.status, stop.delivery?.status_display)}</span>
                                                                 </div>
                                                             </div>
                                                         )) : (
                                                             <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
-                                                                Bu rotada kayıtlı durak görünmüyor.
+                                                                {t('assignments.noStopsInRoute')}
                                                             </div>
                                                         )}
                                                     </div>
@@ -1115,7 +1130,7 @@ export default function AssignmentsPage() {
                                 </div>
                             ) : (
                                 <div className="px-6 py-10 text-center text-sm text-gray-500">
-                                    Henüz hazırlanmış plan yok. Havuzdaki satışları planlayıp onayladığınızda rotalar burada görünecek.
+                                    {t('assignments.noPreparedPlans')}
                                 </div>
                             )}
                         </div>
@@ -1300,7 +1315,7 @@ export default function AssignmentsPage() {
                                                             d.status === 'OUT_FOR_DELIVERY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                                                 d.status === 'DELIVERED' ? 'bg-green-50 text-green-700 border-green-200' :
                                                                     'bg-red-50 text-red-700 border-red-200'
-                                                            }`}>{d.status_display}</span>
+                                                            }`}>{formatDeliveryStatus(d.status, d.status_display)}</span>
                                                     </td>
                                                     <td className="px-6 py-4 text-sm text-gray-600">
                                                         {d.driver_name || <span className="text-gray-400">{t('assignments.noDriver')}</span>}
@@ -1335,7 +1350,7 @@ export default function AssignmentsPage() {
                                         <div className="bg-orange-50 rounded-xl p-4 text-center">
                                             <p className="text-sm text-orange-600 font-medium">{t('assignments.estimatedTime')}</p>
                                             <p className="text-2xl font-bold text-orange-800">
-                                                {Math.floor(routeResult.total_duration_min / 60)} saat {routeResult.total_duration_min % 60} dk
+                                                {Math.floor(routeResult.total_duration_min / 60)} {t('assignments.hour')} {routeResult.total_duration_min % 60} {t('assignments.min')}
                                             </p>
                                         </div>
                                         <div className="bg-green-50 rounded-xl p-4 text-center">
@@ -1357,7 +1372,7 @@ export default function AssignmentsPage() {
                                                 </div>
                                                 <div className="text-right text-sm">
                                                     <p className="text-gray-700 font-medium">{stop.distance_from_previous_km} km</p>
-                                                    <p className="text-xs text-gray-500">{stop.duration_from_previous_min} dk</p>
+                                                    <p className="text-xs text-gray-500">{stop.duration_from_previous_min} {t('assignments.min')}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -1392,7 +1407,7 @@ export default function AssignmentsPage() {
                                             setCustomerDropdownOpen(true);
                                         }}
                                         onFocus={() => setCustomerDropdownOpen(true)}
-                                        placeholder="Müşteri adı yazın..."
+                                        placeholder={t('assignments.plcCustomerSearch')}
                                         required
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
                                     />
@@ -1400,7 +1415,7 @@ export default function AssignmentsPage() {
                                         <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
                                             {customerSearching ? (
                                                 <div className="px-3 py-3 text-sm text-gray-500 flex items-center gap-2">
-                                                    <Loader2 className="animate-spin" size={16} /> Aranıyor...
+                                                    <Loader2 className="animate-spin" size={16} /> {t('assignments.searching')}
                                                 </div>
                                             ) : customers.length ? (
                                                 customers.map(c => (
@@ -1420,7 +1435,7 @@ export default function AssignmentsPage() {
                                                     </button>
                                                 ))
                                             ) : (
-                                                <div className="px-3 py-3 text-sm text-gray-500">Eşleşen müşteri yok.</div>
+                                                <div className="px-3 py-3 text-sm text-gray-500">{t('assignments.noMatchingCustomer')}</div>
                                             )}
                                         </div>
                                     )}
@@ -1448,7 +1463,7 @@ export default function AssignmentsPage() {
                                         }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none bg-white"
                                     >
-                                        <option value="">Tum kategoriler</option>
+                                        <option value="">{t('assignments.allCategories')}</option>
                                         {categories.map(category => (
                                             <option key={category.id} value={category.id}>
                                                 {category.name}{typeof category.product_count === "number" ? ` (${category.product_count})` : ""}
@@ -1464,7 +1479,7 @@ export default function AssignmentsPage() {
                                                 setProductDropdownOpen(true);
                                             }}
                                             onFocus={() => setProductDropdownOpen(true)}
-                                            placeholder="Urun adi veya model kodu yazin..."
+                                            placeholder={t('assignments.plcProductSearch')}
                                             required
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
                                         />
@@ -1472,7 +1487,7 @@ export default function AssignmentsPage() {
                                             <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                                                 {productSearching ? (
                                                     <div className="px-3 py-3 text-sm text-gray-500 flex items-center gap-2">
-                                                        <Loader2 className="animate-spin" size={16} /> Urunler araniyor...
+                                                        <Loader2 className="animate-spin" size={16} /> {t('assignments.searchingProducts')}
                                                     </div>
                                                 ) : products.length ? (
                                                     products.map(product => (
@@ -1488,17 +1503,17 @@ export default function AssignmentsPage() {
                                                         >
                                                             <div className="font-medium text-gray-900">{product.name}</div>
                                                             <div className="text-xs text-gray-500">
-                                                                {product.model_code || "Model kodu yok"} • {product.category_name || product.category?.name || "Kategori yok"} • Stok: {product.stock ?? 0}
+                                                                {product.model_code || "{t('assignments.noModelCode')}"} • {product.category_name || product.category?.name || "{t('assignments.noCategory')}"} • {t('assignments.stockLabel')}: {product.stock ?? 0}
                                                             </div>
                                                         </button>
                                                     ))
                                                 ) : (
-                                                    <div className="px-3 py-3 text-sm text-gray-500">Eslesen urun yok.</div>
+                                                    <div className="px-3 py-3 text-sm text-gray-500">{t('assignments.noMatchingProduct')}</div>
                                                 )}
                                             </div>
                                         )}
                                         {!selectedProduct && productSearch.trim() && !productDropdownOpen && (
-                                            <p className="mt-1 text-xs text-red-600">Listeden bir urun secin.</p>
+                                            <p className="mt-1 text-xs text-red-600">{t('assignments.selectProductFromList')}</p>
                                         )}
                                     </div>
                                 </div>
@@ -1653,10 +1668,10 @@ export default function AssignmentsPage() {
                                 <div>
                                     <h3 className="font-bold text-gray-900 flex items-center gap-2">
                                         <Route size={20} className="text-blue-600" />
-                                        {formatDate(routeDetailTarget.date)} rotası
+                                        {t('assignments.routeOfDate', { date: formatDate(routeDetailTarget.date) })}
                                     </h3>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        {routeDetailTarget.stop_count || routeDetailTarget.stops.length} durak • {Number(routeDetailTarget.total_distance_km || 0)} km • {formatDuration(routeDetailTarget.total_duration_min)}
+                                        {routeDetailTarget.stop_count || routeDetailTarget.stops.length} {t('assignments.stop')} • {Number(routeDetailTarget.total_distance_km || 0)} km • {formatDuration(routeDetailTarget.total_duration_min)}
                                     </p>
                                 </div>
                                 <button onClick={closeRouteDetailModal} className="text-gray-400 hover:text-gray-600 self-end lg:self-auto"><X size={20} /></button>
@@ -1674,29 +1689,29 @@ export default function AssignmentsPage() {
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                                         <div>
-                                                            <h4 className="font-semibold text-gray-900">{stop.delivery?.customer_name || "Müşteri"}</h4>
-                                                            <p className="text-xs text-gray-500">{stop.delivery?.customer_phone || "Telefon yok"}</p>
+                                                            <h4 className="font-semibold text-gray-900">{stop.delivery?.customer_name || t('assignments.customerFallback')}</h4>
+                                                            <p className="text-xs text-gray-500">{stop.delivery?.customer_phone || t('assignments.noPhone')}</p>
                                                         </div>
                                                         <span className="rounded-full bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 border border-gray-200">
-                                                            {stop.delivery?.status_display || stop.delivery?.status || "-"}
+                                                            {formatDeliveryStatus(stop.delivery?.status, stop.delivery?.status_display)}
                                                         </span>
                                                     </div>
                                                     <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
                                                         <MapPin size={14} className="inline mr-1 text-gray-400" />
-                                                        {stop.delivery?.customer_address || "Adres yok"}
+                                                        {stop.delivery?.customer_address || t('assignments.noAddress')}
                                                     </div>
                                                     <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
                                                         <div className="rounded-lg bg-blue-50 px-3 py-2">
-                                                            <div className="text-xs text-blue-600 font-semibold">Ürün</div>
-                                                            <div className="font-medium text-gray-900 truncate">{stop.delivery?.product_name || "Ürün"}</div>
+                                                            <div className="text-xs text-blue-600 font-semibold">{t('assignments.product')}</div>
+                                                            <div className="font-medium text-gray-900 truncate">{stop.delivery?.product_name || t('assignments.product')}</div>
                                                         </div>
                                                         <div className="rounded-lg bg-gray-50 px-3 py-2">
-                                                            <div className="text-xs text-gray-500 font-semibold">Adet</div>
+                                                            <div className="text-xs text-gray-500 font-semibold">{t('assignments.quantity')}</div>
                                                             <div className="font-medium text-gray-900">{stop.delivery?.quantity || 1}</div>
                                                         </div>
                                                         <div className="rounded-lg bg-gray-50 px-3 py-2">
-                                                            <div className="text-xs text-gray-500 font-semibold">Önceki duraktan</div>
-                                                            <div className="font-medium text-gray-900">{Number(stop.distance_from_previous_km || 0)} km • {stop.duration_from_previous_min || 0} dk</div>
+                                                            <div className="text-xs text-gray-500 font-semibold">{t('assignments.fromPreviousStop')}</div>
+                                                            <div className="font-medium text-gray-900">{Number(stop.distance_from_previous_km || 0)} km • {stop.duration_from_previous_min || 0} {t('assignments.min')}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1705,20 +1720,20 @@ export default function AssignmentsPage() {
                                 </div>
 
                                 <aside className="rounded-xl border border-gray-200 bg-gray-50 p-4 h-fit">
-                                    <h4 className="font-semibold text-gray-900">Teslimatçı ataması</h4>
+                                    <h4 className="font-semibold text-gray-900">{t('assignments.driverAssignment')}</h4>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Mevcut: {routeDetailTarget.driver_name || "Atanmamış"}
+                                        {t('assignments.currentAssigned', { name: routeDetailTarget.driver_name || t('assignments.unassigned') })}
                                     </p>
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase mt-4 mb-1">Teslimatçı</label>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase mt-4 mb-1">{t('assignments.lblDriver')}</label>
                                     <select value={selectedDriverId} onChange={(e) => setSelectedDriverId(Number(e.target.value))}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none">
-                                        <option value="">Seçiniz</option>
+                                        <option value="">{t('assignments.selectPlaceholder')}</option>
                                         {drivers.map(d => <option key={d.id} value={d.id}>{d.first_name} {d.last_name} ({d.username})</option>)}
                                     </select>
                                     <button onClick={handleAssignRouteDriverFromDetail} disabled={submitting || !selectedDriverId}
                                         className="mt-3 w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                                         {submitting ? <Loader2 className="animate-spin" size={18} /> : <UserCheck size={18} />}
-                                        Ata
+                                        {t('assignments.btnAssign')}
                                     </button>
                                 </aside>
                             </div>
@@ -1734,7 +1749,7 @@ export default function AssignmentsPage() {
                                 <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <AlertCircle size={24} />
                                 </div>
-                                <h3 className="text-lg font-bold text-gray-900 mb-2">Hazırlanan plan silinsin mi?</h3>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">{t('assignments.deletePlanConfirmTitle')}</h3>
                                 <p className="text-gray-500 text-sm mb-2">
                                     {formatDate(routeDeleteTarget.date)} tarihli, {routeDeleteTarget.stop_count || routeDeleteTarget.stops?.length || 0} duraklı plan silinecek.
                                 </p>
@@ -1744,11 +1759,11 @@ export default function AssignmentsPage() {
                                 <div className="flex gap-3">
                                     <button onClick={() => { setRouteDeleteModal(false); setRouteDeleteTarget(null); }}
                                         className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">
-                                        İptal
+                                        {t('assignments.btnCancel')}
                                     </button>
                                     <button onClick={handleDeletePreparedRoute} disabled={submitting}
                                         className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                                        {submitting ? <Loader2 className="animate-spin" size={18} /> : "Planı sil"}
+                                        {submitting ? <Loader2 className="animate-spin" size={18} /> : t('assignments.btnDeletePlan')}
                                     </button>
                                 </div>
                             </div>
@@ -1813,7 +1828,7 @@ export default function AssignmentsPage() {
                                                     <MapPin size={14} /> {day.total_distance_km || 0} km
                                                 </span>
                                                 <span className={`flex items-center gap-1 ${(day.total_duration_min || 0) > 360 ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
-                                                    🕐 {day.total_duration_min || 0} dk
+                                                    🕐 {day.total_duration_min || 0} {t('assignments.min')}
                                                 </span>
                                                 <span className="text-gray-400 text-lg">{expandedDay === idx ? '▲' : '▼'}</span>
                                             </div>

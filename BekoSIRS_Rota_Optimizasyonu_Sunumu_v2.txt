@@ -1,0 +1,67 @@
+BekoSIRS Akıllı Rota Optimizasyonu Sunumu (v2 — Güncellenmiş)
+
+BÖLÜM 1: SUNUM METNİ (Tahmini Süre: 3 Dakika)
+
+[Giriş - Problemi Tanımlamak]
+
+Herkese merhaba. Bir ürünü satmak işin sadece vitrin kısmıdır; asıl operasyon, o ürünü müşterinin kapısına en düşük maliyetle ve en hızlı şekilde ulaştırdığınızda başlar.
+
+Özellikle Kıbrıs gibi dağınık yerleşimlerin olduğu bir coğrafyada lojistik, kağıt üzerindeki adreslere bakarak şoförün içgüdülerine bırakılamayacak kadar maliyetli bir iştir. Geleneksel yöntemlerle yapılan rotalamalar; gereksiz yere yakılan binlerce litre yakıt, trafikte kaybolan saatler ve mutsuz müşteriler demektir. İşte biz, BekoSIRS projemizde teslimat sürecini bir 'kargocu mantığından' çıkarıp, güçlü bir matematiksel Filo Yöneticisine dönüştürdük.
+
+[Orta Bölüm - Teknik Gövde Gösterisi ve Çözüm]
+
+Peki bunu nasıl başardık? Web panelimizdeki Rota Optimizasyonu, harita üzerinde iki nokta arasına düz bir çizgi çekmekten çok daha öte bir mühendislik barındırıyor.
+
+Öncelikle, sistemimiz her gün lojistiğin en temel zorluğu olan 'Araç Rotalama Problemi (Vehicle Routing Problem — VRP)' dediğimiz, bilgisayar bilimlerinin o meşhur NP-hard problemini saniyeler içinde çözüyor. Klasik Gezgin Satıcı Problemi tek bir aracı ele alır; bizim sistemimiz ise birden fazla teslimat günü, zaman bütçesi, kurulum süresi ve araç kapasitesini eş zamanlı değerlendiren çok daha kapsamlı bir VRP çözücüdür. Bunu yaparken açık kaynak dünyasının en güçlü rota motorlarından olan OSRM (Open Source Routing Machine) teknolojisini sisteme entegre ettik. Sistemimiz; Lefkoşa'dan çıkan bir aracın uğrayacağı tüm noktalar için gerçek karayolu mesafelerini ve sürelerini çeker, devasa bir veri matrisi oluşturur.
+
+Ardından devreye kendi geliştirdiğimiz iki aşamalı optimizasyon motorumuz girer. İlk aşamada Yol Farkındalıklı En Yakın Komşu (Road-Aware Nearest Neighbor) algoritması, OSRM matrisine bakarak her adımda en kısa sürede ulaşılabilecek bir sonraki noktayı seçerek hızlı bir başlangıç rotası oluşturur. İkinci aşamada 2-opt Yerel Arama (Local Search) algoritması devreye girer: rotadaki kenar çiftlerini sistematik olarak ters çevirerek, iyileştirme kalmayana kadar rotayı sıkıştırır. Bu iki katmanlı yaklaşım, tek başına Nearest Neighbor'ın kaçırabileceği kısayolları da yakalar.
+
+Bu algoritma; Lefkoşa'ya, Girne'ye veya Güzelyurt'a gidecek ürünleri körü körüne aynı güne atmaz. Siparişleri ilçe bazında kümelendirir, günlük çalışma süresi bütçesini (kurulum dahil) gözetir, kapasiteyi aşan siparişleri otomatik olarak günlere böler ve depoya dönüş mesafesini de toplam süreye dahil ederek ölü kilometreyi minimize eder. Haritada göreceğiniz o 'Altın Rota' işte bu matematiksel süzgeçten geçerek çizilir.
+
+[Güvenilirlik / B Planı Vurgusu]
+
+Bir mühendislik projesi sadece iyi günleri değil, kriz anlarını da düşünmelidir. Peki ya harita sunucusuna ulaşılamazsa veya internette dalgalanma olursa araçlarımız yolda mı kalacak? Hayır. Böyle bir durumda sistemimiz anında yedekleme mekanizmasına geçer ve Haversine Formülünü devreye sokar. Dünyanın küresel eğriliğini, enlem ve boylamları trigonometrik olarak hesaplayarak koordinatlar arası fiziksel mesafeyi bulur ve operasyonun sıfır kesintiyle devam etmesini sağlar.
+
+[Kapanış - Vurucu Son]
+
+Sonuç olarak, BekoSIRS Rota Optimizasyonu sadece şık bir harita ekranı değildir. Şirketin aylık yakıt masraflarını dramatik ölçüde düşüren, gereksiz karbon salınımını engelleyerek çevreyi koruyan ve en önemlisi müşteriye 'Kargonuz yolda' demek yerine, 'Tam zamanında kapınızda' dememizi sağlayan tam otonom bir operasyon zekasıdır. Dinlediğiniz için teşekkür ederim.
+
+
+================================================================================
+BÖLÜM 2: ROTA OPTİMİZASYONUNDA KULLANILAN TEKNOLOJİ VE ALGORİTMALARIN DETAYLI AÇIKLAMASI
+================================================================================
+
+BekoSIRS projesindeki Rota Optimizasyonu altyapısı, 4 temel matematiksel ve yazılımsal bileşenin kusursuz entegrasyonuyla çalışır:
+
+
+1. OSRM (Open Source Routing Machine)
+
+Nedir? Dünya çapında C++ ile yazılmış, açık kaynaklı, yüksek performanslı bir rota ve yol analizi motorudur. BekoSIRS için Kıbrıs harita verisiyle (OpenStreetMap) yapılandırılmış, Docker üzerinde self-hosted olarak çalışan özel bir OSRM sunucusu kurulmuştur.
+
+Sistemdeki Rolü: Lojistikte iki adresin kuş uçuşu yakın olması, arabayla kolayca gidilebileceği anlamına gelmez (arada bir dağ, otoban ayrımı veya deniz olabilir). OSRM, sistemdeki tüm teslimat noktaları arasındaki gerçek karayolu ağını analiz eder. 'A noktasından B noktasına gitmek kaç kilometre ve yol tipine göre kaç dakika sürer?' sorusunun cevabını vererek bir 'Mesafe ve Süre Matrisi (Route Matrix)' çıkarır.
+
+
+2. Road-Aware Nearest Neighbor (Yol Farkındalıklı En Yakın Komşu Algoritması)
+
+Nedir? Bilgisayar bilimlerindeki ünlü 'Araç Rotalama Problemini (VRP — Vehicle Routing Problem)' çözmek için kullanılan hızlı ve sezgisel (heuristic) bir başlangıç algoritmasıdır. Klasik 'Gezgin Satıcı Problemi (TSP)' tek araç varsayarken, VRP birden fazla araç/gün, kapasite kısıtı ve zaman pencerelerini de kapsar. BekoSIRS'in çözdüğü problem budur.
+
+Sistemdeki Rolü: Sistemimiz bu algoritmayı kullanarak rotanın ilk taslağını oluşturur. Şöyle çalışır: Araç Merkez Depodan (örneğin Lefkoşa'dan) çıkar. Algoritma OSRM matrisine bakar ve o anki konumdan en kısa sürede ulaşılabilecek teslimat noktasını bulur. Aracı oraya yönlendirir. Ardından yeni teslimat noktasından bir sonrakine en yakın rotayı hesaplayarak devam eder. Önemli fark: Nearest Neighbor mesafe (km) değil, süre (dakika) bazlı çalışır — 15 km otoban yolu, 5 km dağ yolundan daha kısa sürebilir.
+
+
+3. 2-opt Yerel Arama (Local Search Optimization)
+
+Nedir? Nearest Neighbor'ın ürettiği başlangıç rotasını iteratif olarak iyileştiren bir optimizasyon algoritmasıdır. Rotadaki her olası kenar çiftini sistematik olarak ters çevirerek daha kısa bir rota bulunup bulunamayacağını test eder.
+
+Sistemdeki Rolü: Nearest Neighbor hızlı ama bazen suboptimal rotalar üretir (örneğin bir sokağın önünden geçip sonra geri dönmek). 2-opt bu durumları tespit eder: rotanın bir bölümünü tersine çevirerek toplam süreyi düşürür. İyileştirme kalmayıncaya kadar tekrar eder. NN + 2-opt kombinasyonu, akademik literatürde TSP/VRP için en yaygın ve kanıtlanmış sezgisel yaklaşımlardan biridir.
+
+
+4. Haversine Formülü (Sistemin Acil Durum B Planı)
+
+Nedir? Bir küre üzerindeki iki noktanın, enlem ve boylam değerleri kullanılarak aralarındaki en kısa mesafeyi (büyük daire mesafesini) trigonometrik sinüs ve kosinüs kurallarıyla hesaplayan klasik bir formüldür.
+
+Sistemdeki Rolü: Sistem tamamen OSRM harita sunucusuna bağımlı kalsaydı, harita sunucusu çöktüğünde tüm lojistik operasyonu dururdu. Fault Tolerance (Hata Toleransı) prensibi gereği, BekoSIRS eğer OSRM'den cevap alamazsa veya API hata verirse anında arka planda Haversine Formülünü çalıştırır. Dünyanın yuvarlaklığını hesaba katarak müşterilerin koordinatları arasındaki gerçek kuş uçuşu fiziksel mesafeyi saniyeler içinde hesaplar. Böylece kriz anında bile Rota Optimizasyonu asla kesintiye uğramaz.
+
+
+Özetle
+
+Bu 4 bileşen; Python (Django) dilinde geliştirilmiş modüler servis mimarisiyle çalışır. Gerçek harita verisiyle beslenen (OSRM), süre-bazlı sezgisel rota oluşturan (Nearest Neighbor), bunu iteratif olarak sıkıştıran (2-opt), ve çökmemek üzere tasarlanmış garantili bir matematiksel yedeklemeye (Haversine) sahip güçlü bir endüstriyel lojistik motorudur.

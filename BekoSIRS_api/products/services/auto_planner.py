@@ -141,13 +141,24 @@ def _recalculate_route_legs(
     return route
 
 
+def _leg_cost(
+    depot: Tuple[float, float],
+    from_stop: Optional[dict],
+    to_stop: dict,
+    matrix: Optional[RouteMatrix],
+) -> float:
+    """Süre-bazlı maliyet (dakika). OSRM varsa gerçek süre, yoksa mesafeden tahmin."""
+    distance = _leg_distance(depot, from_stop, to_stop, matrix)
+    return _leg_duration_min(from_stop, to_stop, matrix, distance)
+
+
 def _nn_route(
     depot: Tuple[float, float],
     stops: List[dict],
     matrix: Optional[RouteMatrix] = None,
 ) -> List[dict]:
     """
-    Nearest-Neighbor ordering.
+    Nearest-Neighbor ordering — süre (dakika) bazlı.
     Each stop dict must have 'lat' and 'lng' keys.
     Returns the ordered list with 'dist_from_prev' added.
     """
@@ -157,16 +168,15 @@ def _nn_route(
     unvisited = list(stops)
     route: List[dict] = []
     current_stop = None
-    
+
     while unvisited:
-        best, best_dist = None, float('inf')
+        best, best_cost = None, float('inf')
         for s in unvisited:
-            d = _leg_distance(depot, current_stop, s, matrix)
-            if d < best_dist:
-                best_dist = d
+            cost = _leg_cost(depot, current_stop, s, matrix)
+            if cost < best_cost:
+                best_cost = cost
                 best = s
         unvisited.remove(best)
-        best['dist_from_prev'] = round(best_dist, 2)
         route.append(best)
         current_stop = best
 
@@ -178,27 +188,27 @@ def _two_opt(
     depot: Tuple[float, float],
     matrix: Optional[RouteMatrix] = None,
 ) -> List[dict]:
-    """Improve route with 2-opt swaps until no improvement is found."""
+    """Improve route with 2-opt swaps (süre bazlı) until no improvement is found."""
     if len(route) < 3:
         return route
 
-    def total_dist(r: List[dict]) -> float:
-        distance = _leg_distance(depot, None, r[0], matrix)
+    def total_time(r: List[dict]) -> float:
+        cost = _leg_cost(depot, None, r[0], matrix)
         for idx in range(len(r) - 1):
-            distance += _leg_distance(depot, r[idx], r[idx + 1], matrix)
-        return distance
+            cost += _leg_cost(depot, r[idx], r[idx + 1], matrix)
+        return cost
 
     improved = True
     while improved:
         improved = False
-        best_distance = total_dist(route)
+        best_time = total_time(route)
         for i in range(len(route) - 1):
             for j in range(i + 1, len(route)):
                 new_route = route[:i] + list(reversed(route[i:j + 1])) + route[j + 1:]
-                new_dist = total_dist(new_route)
-                if new_dist < best_distance - 0.01:  # 10m tolerance
+                new_time = total_time(new_route)
+                if new_time < best_time - 0.1:  # 6 saniye tolerans
                     route = new_route
-                    best_distance = new_dist
+                    best_time = new_time
                     improved = True
                     break
             if improved:
@@ -705,9 +715,14 @@ def generate_auto_plan(
         optimized = optimize_route((depot_lat, depot_lng), day['stops'])
         day['stops'] = optimized
 
-        # Gerçek toplam: sürüş + servis (handling + kurulum)
+        # Gerçek toplam: sürüş + servis (handling + kurulum) + depoya dönüş tahmini
         total_drive = sum(s['drive_duration_from_prev_min'] for s in optimized)
         total_service = sum(s['service_min'] for s in optimized)
+        # Son duraktan depoya dönüş süresini dahil et
+        if optimized:
+            _last = optimized[-1]
+            _ret_dist = haversine_km(float(_last['lat']), float(_last['lng']), depot_lat, depot_lng)
+            total_drive += (_ret_dist / AVG_SPEED_KMH) * 60
         actual_total = total_drive + total_service
 
         # Bütçeyi aşıyorsa kilitsiz son durakları bir sonraki güne taşı
@@ -716,13 +731,19 @@ def generate_auto_plan(
             if last.get('locked'):
                 break
             optimized.pop()
-            actual_total -= last['drive_duration_from_prev_min'] + last['service_min']
             day['delivery_count'] -= len(last['assignment_ids'])
-            # Optimizasyon alanlarını temizle (sonraki gün yeniden hesaplanacak)
             for k in ('dist_from_prev', 'drive_duration_from_prev_min',
                       'duration_from_prev_min', 'routing_source', 'stop_order'):
                 last.pop(k, None)
             spillover[di + 1].append(last)
+            # Toplam süreyi yeniden hesapla (yeni son duraktan depoya dönüş dahil)
+            total_drive = sum(s['drive_duration_from_prev_min'] for s in optimized)
+            total_service = sum(s['service_min'] for s in optimized)
+            if optimized:
+                _last = optimized[-1]
+                _ret_dist = haversine_km(float(_last['lat']), float(_last['lng']), depot_lat, depot_lng)
+                total_drive += (_ret_dist / AVG_SPEED_KMH) * 60
+            actual_total = total_drive + total_service
 
         # Taşma için gün yoksa oluştur
         if spillover.get(di + 1) and di + 1 >= len(day_plan):
@@ -732,12 +753,25 @@ def generate_auto_plan(
         total_dist = sum(s['dist_from_prev'] for s in optimized)
         total_drive = sum(s['drive_duration_from_prev_min'] for s in optimized)
         total_service = sum(s['service_min'] for s in optimized)
+
+        # Depoya dönüş bacağı: son duraktan depoya mesafe ve süre
+        if optimized:
+            last = optimized[-1]
+            return_dist = _leg_distance(
+                (depot_lat, depot_lng), last,
+                {'lat': depot_lat, 'lng': depot_lng, '_matrix_index': 0}, None
+            )
+            return_drive = (return_dist / AVG_SPEED_KMH) * 60
+            total_dist += return_dist
+            total_drive += return_drive
+
         actual_total = total_drive + total_service
 
         day['total_distance_km'] = round(total_dist, 2)
         day['total_drive_min'] = round(total_drive, 1)
         day['total_service_min'] = round(total_service, 1)
         day['total_duration_min'] = round(actual_total, 1)
+        day['return_to_depot_km'] = round(return_dist, 2) if optimized else 0
         day['work_budget_min'] = int(work_minutes)
 
         if actual_total > work_minutes:
@@ -823,8 +857,12 @@ def recalculate_route_metrics(route) -> None:
         stop.save(update_fields=['distance_from_previous_km', 'duration_from_previous_min'])
         total_distance += distance
 
-    route.total_distance_km = round(total_distance, 2)
-    route.total_duration_min = sum(stop.duration_from_previous_min or 0 for stop in stops)
+    # Depoya dönüş bacağı
+    return_distance = haversine_km(prev_lat, prev_lng, depot_lat, depot_lng) if stops else 0.0
+    return_duration = (return_distance / AVG_SPEED_KMH) * 60
+
+    route.total_distance_km = round(total_distance + return_distance, 2)
+    route.total_duration_min = sum(stop.duration_from_previous_min or 0 for stop in stops) + int(return_duration)
     route.is_optimized = True
     route.optimized_at = timezone.now()
     route.save(update_fields=['total_distance_km', 'total_duration_min', 'is_optimized', 'optimized_at'])

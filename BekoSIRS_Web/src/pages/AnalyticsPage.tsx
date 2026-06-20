@@ -358,7 +358,7 @@ const ForecastContent: React.FC<{ data: any }> = ({ data: initialData }) => {
                         <div className="min-w-0">
                             <p className="font-semibold text-gray-900 text-sm">{t('analytics.modelActive')}</p>
                             <p className="text-xs text-gray-500 truncate">
-                                R²={modelInfo.test_r2?.toFixed(3)} · MAE={modelInfo.test_mae?.toFixed(1)} · {modelInfo.n_samples} örnek
+                                R²={modelInfo.test_r2?.toFixed(3)} · MAE={modelInfo.test_mae?.toFixed(1)} · {modelInfo.n_samples} {t('analytics.samples')}
                             </p>
                         </div>
                     </div>
@@ -601,6 +601,13 @@ const AuditContent: React.FC<{ data: any }> = ({ data }) => {
 
     const logs = data.logs || [];
 
+    const actionLabels: Record<string, string> = {
+        'Oluşturma': t('analytics.actionCreate'),
+        'Güncelleme': t('analytics.actionUpdate'),
+        'Silme': t('analytics.actionDelete'),
+        'Giriş': t('analytics.actionLogin'),
+        'Çıkış': t('analytics.actionLogout'),
+    };
     const actionColors: Record<string, string> = {
         'Oluşturma': 'bg-green-100 text-green-700',
         'Güncelleme': 'bg-blue-100 text-blue-700',
@@ -644,7 +651,7 @@ const AuditContent: React.FC<{ data: any }> = ({ data }) => {
                                     <td className="px-6 py-4 font-medium text-gray-900">{log.user}</td>
                                     <td className="px-6 py-4">
                                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${actionColors[log.action] || 'bg-gray-100 text-gray-700'}`}>
-                                            {log.action}
+                                            {actionLabels[log.action] || log.action}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-600">{log.model || '-'}</td>
@@ -671,6 +678,20 @@ const SeasonalContent: React.FC<{ data: any }> = ({ data }) => {
         "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
     // Heat map color based on sales intensity (0-max)
+    const monthNames: Record<string, string> = {
+        "Ocak": t('analytics.janShort'),
+        "Şubat": t('analytics.febShort'),
+        "Mart": t('analytics.marShort'),
+        "Nisan": t('analytics.aprShort'),
+        "Mayıs": t('analytics.mayShort'),
+        "Haziran": t('analytics.junShort'),
+        "Temmuz": t('analytics.julShort'),
+        "Ağustos": t('analytics.augShort'),
+        "Eylül": t('analytics.sepShort'),
+        "Ekim": t('analytics.octShort'),
+        "Kasım": t('analytics.novShort'),
+        "Aralık": t('analytics.decShort')
+    };
     const getHeatColor = (value: number, maxValue: number) => {
         if (value === 0) return 'bg-gray-50 text-gray-400';
         const intensity = maxValue > 0 ? value / maxValue : 0;
@@ -722,7 +743,7 @@ const SeasonalContent: React.FC<{ data: any }> = ({ data }) => {
                                 <th className="px-4 py-3 text-left font-semibold text-gray-600 sticky left-0 bg-gray-50 min-w-[200px]">{t('analytics.colProduct')}</th>
                                 {months.map(month => (
                                     <th key={month} className="px-2 py-3 text-center font-semibold text-gray-600 min-w-[60px]">
-                                        {month.substring(0, 3)}
+                                        {monthNames[month] || month.substring(0, 3)}
                                     </th>
                                 ))}
                                 <th className="px-4 py-3 text-center font-semibold text-gray-600">{t('analytics.colTotal')}</th>
@@ -902,9 +923,12 @@ const ForecastAreaChart: React.FC<{ data: any[] }> = ({ data }) => {
 };
 
 // Empty State Component
-const EmptyState = () => (
+const EmptyState = () => {
+    const { t } = useTranslation();
+    return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-12 text-center">
         <span className="text-4xl">📊</span>
-        <p className="text-gray-500 mt-4">Veri bulunamadı</p>
+        <p className="text-gray-500 mt-4">{t('analytics.noDataFound')}</p>
     </div>
-);
+    );
+};

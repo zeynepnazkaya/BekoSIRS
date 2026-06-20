@@ -9,6 +9,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { stockIntelligenceAPI } from '../services/api';
 import {
     AlertTriangle,
@@ -54,6 +55,7 @@ interface DashboardSummary {
 }
 
 export default function StockIntelligenceWidget() {
+    const { t } = useTranslation();
     const [data, setData] = useState<DashboardSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export default function StockIntelligenceWidget() {
             setData(response.data);
             setError(null);
         } catch (err) {
-            setError('Stok verileri yüklenemedi');
+            setError(t('stock.fetchError'));
             console.error('Stock Intelligence Error:', err);
         } finally {
             setLoading(false);
@@ -91,7 +93,7 @@ export default function StockIntelligenceWidget() {
         return (
             <div className="bg-white rounded-2xl shadow-sm p-12 flex flex-col items-center justify-center">
                 <RefreshCw className="animate-spin text-blue-600 mb-4" size={32} />
-                <span className="text-gray-500 font-medium">Yapay zeka stok verilerini analiz ediyor...</span>
+                <span className="text-gray-500 font-medium">{t('stock.analyzing')}</span>
             </div>
         );
     }
@@ -100,12 +102,12 @@ export default function StockIntelligenceWidget() {
         return (
             <div className="bg-red-50 border border-red-100 rounded-2xl p-8 text-center">
                 <AlertTriangle className="mx-auto text-red-500 mb-4" size={32} />
-                <span className="block text-red-800 font-medium mb-4">{error || 'Veri yüklenemedi'}</span>
+                <span className="block text-red-800 font-medium mb-4">{error || t('stock.noDataError')}</span>
                 <button
                     onClick={fetchData}
                     className="px-6 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium"
                 >
-                    Tekrar Dene
+                    {t('stock.retry')}
                 </button>
             </div>
         );
@@ -117,17 +119,17 @@ export default function StockIntelligenceWidget() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-bold text-gray-900">Stok Zekası</h2>
+                        <h2 className="text-xl font-bold text-gray-900">{t('stock.title')}</h2>
                         <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">AI Powered</span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">Stok optimizasyonu ve akıllı sipariş önerileri</p>
+                    <p className="text-sm text-gray-500 mt-1">{t('stock.subtitle')}</p>
                 </div>
                 <button
                     onClick={fetchData}
                     className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors text-sm font-medium shadow-sm"
                 >
                     <RefreshCw size={16} />
-                    Verileri Yenile
+                    {t('stock.refreshData')}
                 </button>
             </div>
 
@@ -138,9 +140,9 @@ export default function StockIntelligenceWidget() {
                         <AlertCircle size={64} className="text-red-600" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-sm font-medium text-red-600 mb-1">Kritik Stok</p>
+                        <p className="text-sm font-medium text-red-600 mb-1">{t('stock.kpiCritical')}</p>
                         <h3 className="text-3xl font-bold text-gray-900">{data.summary.critical_count}</h3>
-                        <p className="text-xs text-gray-500 mt-2">Acil sipariş gerekli</p>
+                        <p className="text-xs text-gray-500 mt-2">{t('stock.kpiCriticalDesc')}</p>
                     </div>
                 </div>
 
@@ -149,9 +151,9 @@ export default function StockIntelligenceWidget() {
                         <AlertTriangle size={64} className="text-yellow-600" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-sm font-medium text-yellow-600 mb-1">Uyarılar</p>
+                        <p className="text-sm font-medium text-yellow-600 mb-1">{t('stock.kpiWarnings')}</p>
                         <h3 className="text-3xl font-bold text-gray-900">{data.summary.warning_count}</h3>
-                        <p className="text-xs text-gray-500 mt-2">Takip edilmesi gerekenler</p>
+                        <p className="text-xs text-gray-500 mt-2">{t('stock.kpiWarningsDesc')}</p>
                     </div>
                 </div>
 
@@ -160,9 +162,9 @@ export default function StockIntelligenceWidget() {
                         <TrendingUp size={64} className="text-green-600" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-sm font-medium text-green-600 mb-1">Fırsatlar</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">{t('stock.kpiOpportunities')}</p>
                         <h3 className="text-3xl font-bold text-gray-900">{data.summary.opportunity_count}</h3>
-                        <p className="text-xs text-gray-500 mt-2">Satış potansiyeli yüksek</p>
+                        <p className="text-xs text-gray-500 mt-2">{t('stock.kpiOpportunitiesDesc')}</p>
                     </div>
                 </div>
 
@@ -171,9 +173,9 @@ export default function StockIntelligenceWidget() {
                         <CheckCircle size={64} className="text-blue-600" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-sm font-medium text-blue-600 mb-1">Sağlıklı Stok</p>
+                        <p className="text-sm font-medium text-blue-600 mb-1">{t('stock.kpiHealthy')}</p>
                         <h3 className="text-3xl font-bold text-gray-900">{data.summary.healthy_count}</h3>
-                        <p className="text-xs text-gray-500 mt-2">Optimum seviyede</p>
+                        <p className="text-xs text-gray-500 mt-2">{t('stock.kpiHealthyDesc')}</p>
                     </div>
                 </div>
             </div>
@@ -189,7 +191,7 @@ export default function StockIntelligenceWidget() {
                                 : 'text-gray-500 hover:text-gray-700'
                             }`}
                     >
-                        Kritik Uyarılar ({data.critical_alerts.length})
+                        {t('stock.tabCritical')} ({data.critical_alerts.length})
                         {activeTab === 'critical' && (
                             <div className="absolute bottom-0 left-0 w-full h-0.5 bg-red-600 rounded-t-full" />
                         )}
@@ -201,7 +203,7 @@ export default function StockIntelligenceWidget() {
                                 : 'text-gray-500 hover:text-gray-700'
                             }`}
                     >
-                        Uyarılar ({data.warning_alerts.length})
+                        {t('stock.tabWarnings')} ({data.warning_alerts.length})
                         {activeTab === 'warnings' && (
                             <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-600 rounded-t-full" />
                         )}
@@ -213,7 +215,7 @@ export default function StockIntelligenceWidget() {
                                 : 'text-gray-500 hover:text-gray-700'
                             }`}
                     >
-                        Fırsat Ürünleri ({data.opportunities.length})
+                        {t('stock.tabOpportunities')} ({data.opportunities.length})
                         {activeTab === 'opportunities' && (
                             <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-600 rounded-t-full" />
                         )}
@@ -239,7 +241,7 @@ export default function StockIntelligenceWidget() {
                     {activeTab === 'critical' && (
                         <div className="space-y-4">
                             {data.critical_alerts.length === 0 ? (
-                                <EmptyState message="Harika! Kritik stok uyarısı bulunmuyor." icon={CheckCircle} color="text-green-500" />
+                                <EmptyState message={t('stock.emptyCritical')} icon={CheckCircle} color="text-green-500" />
                             ) : (
                                 data.critical_alerts.map((alert) => (
                                     <div key={alert.product_id} className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row gap-6">
@@ -247,7 +249,7 @@ export default function StockIntelligenceWidget() {
                                             <div className="flex items-start justify-between mb-2">
                                                 <div className="flex items-center gap-2">
                                                     <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                                    <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Acil</span>
+                                                    <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full uppercase tracking-wider">{t('stock.urgent')}</span>
                                                 </div>
                                                 <span className="text-xs text-gray-400 font-medium">{alert.category}</span>
                                             </div>
@@ -256,18 +258,18 @@ export default function StockIntelligenceWidget() {
 
                                             <div className="flex flex-wrap gap-4 text-sm">
                                                 <div className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                                                    <span className="text-gray-500 block text-xs">Mevcut Stok</span>
-                                                    <span className="font-bold text-gray-900">{alert.current_stock} Adet</span>
+                                                    <span className="text-gray-500 block text-xs">{t('stock.currentStock')}</span>
+                                                    <span className="font-bold text-gray-900">{alert.current_stock} {t('stock.pcs')}</span>
                                                 </div>
                                                 <div className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                                                    <span className="text-gray-500 block text-xs">Kalan Süre</span>
+                                                    <span className="text-gray-500 block text-xs">{t('stock.remainingTime')}</span>
                                                     <span className={`font-bold ${!alert.days_until_stockout ? 'text-red-600' : 'text-gray-900'}`}>
-                                                        {alert.days_until_stockout ? `${Math.round(alert.days_until_stockout)} Gün` : 'Tükendi!'}
+                                                        {alert.days_until_stockout ? `${Math.round(alert.days_until_stockout)} Gün` : t('stock.outOfStock')}
                                                     </span>
                                                 </div>
                                                 <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-                                                    <span className="text-blue-600 block text-xs">Satış Hızı</span>
-                                                    <span className="font-bold text-blue-800">{alert.velocity.toFixed(1)} / gün</span>
+                                                    <span className="text-blue-600 block text-xs">{t('stock.salesVelocity')}</span>
+                                                    <span className="font-bold text-blue-800">{alert.velocity.toFixed(1)} {t('stock.perDay')}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -275,14 +277,14 @@ export default function StockIntelligenceWidget() {
                                         <div className="md:w-72 bg-gray-50 rounded-xl p-4 border border-gray-100 flex flex-col justify-center">
                                             <div className="flex items-center gap-2 mb-3 text-sm font-medium text-gray-700">
                                                 <ShoppingBag size={16} />
-                                                Önerilen Sipariş
+                                                {t('stock.recommendedOrder')}
                                             </div>
                                             <div className="flex justify-between items-end mb-2">
                                                 <span className="text-2xl font-bold text-gray-900">{alert.recommended_order_qty} <span className="text-base font-normal text-gray-500">Adet</span></span>
                                                 <span className="text-sm font-bold text-gray-900">{formatCurrency(alert.estimated_order_cost)}</span>
                                             </div>
                                             <button className="w-full mt-2 bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2">
-                                                Sipariş Listesine Ekle <ArrowRight size={14} />
+                                                {t('stock.addToOrderList')} <ArrowRight size={14} />
                                             </button>
                                         </div>
                                     </div>
@@ -295,7 +297,7 @@ export default function StockIntelligenceWidget() {
                     {activeTab === 'warnings' && (
                         <div className="space-y-4">
                             {data.warning_alerts.length === 0 ? (
-                                <EmptyState message="Takip edilmesi gereken sarı alarm uyarısı bulunmuyor." icon={CheckCircle} color="text-green-500" />
+                                <EmptyState message={t('stock.emptyWarnings')} icon={CheckCircle} color="text-green-500" />
                             ) : (
                                 <>
                                 {data.warning_alerts.slice((warningsPage - 1) * ITEMS_PER_PAGE, warningsPage * ITEMS_PER_PAGE).map((alert) => (
@@ -304,7 +306,7 @@ export default function StockIntelligenceWidget() {
                                             <div className="flex items-start justify-between mb-2">
                                                 <div className="flex items-center gap-2">
                                                     <AlertTriangle size={16} className="text-yellow-500" />
-                                                    <span className="text-xs font-bold text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Dikkat</span>
+                                                    <span className="text-xs font-bold text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full uppercase tracking-wider">{t('stock.attention')}</span>
                                                 </div>
                                                 <span className="text-xs text-gray-400 font-medium">{alert.category}</span>
                                             </div>
@@ -313,18 +315,18 @@ export default function StockIntelligenceWidget() {
 
                                             <div className="flex flex-wrap gap-4 text-sm">
                                                 <div className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                                                    <span className="text-gray-500 block text-xs">Mevcut Stok</span>
-                                                    <span className="font-bold text-gray-900">{alert.current_stock} Adet</span>
+                                                    <span className="text-gray-500 block text-xs">{t('stock.currentStock')}</span>
+                                                    <span className="font-bold text-gray-900">{alert.current_stock} {t('stock.pcs')}</span>
                                                 </div>
                                                 <div className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                                                    <span className="text-gray-500 block text-xs">Tahmini Tükenme</span>
+                                                    <span className="text-gray-500 block text-xs">{t('stock.estimatedStockout')}</span>
                                                     <span className="font-bold text-yellow-700">
                                                         {alert.days_until_stockout ? `${Math.round(alert.days_until_stockout)} Gün` : '-'}
                                                     </span>
                                                 </div>
                                                 <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-                                                    <span className="text-blue-600 block text-xs">Satış Hızı</span>
-                                                    <span className="font-bold text-blue-800">{alert.velocity.toFixed(1)} / gün</span>
+                                                    <span className="text-blue-600 block text-xs">{t('stock.salesVelocity')}</span>
+                                                    <span className="font-bold text-blue-800">{alert.velocity.toFixed(1)} {t('stock.perDay')}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -340,7 +342,7 @@ export default function StockIntelligenceWidget() {
                                             Önceki
                                         </button>
                                         <span className="text-sm text-gray-500 font-medium">
-                                            Sayfa {warningsPage} / {Math.ceil(data.warning_alerts.length / ITEMS_PER_PAGE)}
+                                            {t('stock.page')} {warningsPage} / {Math.ceil(data.warning_alerts.length / ITEMS_PER_PAGE)}
                                         </span>
                                         <button 
                                             disabled={warningsPage === Math.ceil(data.warning_alerts.length / ITEMS_PER_PAGE)}
@@ -361,7 +363,7 @@ export default function StockIntelligenceWidget() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {data.opportunities.length === 0 ? (
                                 <div className="col-span-2">
-                                    <EmptyState message="Şu an için özel bir fırsat önerisi yok." icon={TrendingUp} color="text-blue-500" />
+                                    <EmptyState message={t('stock.emptyOpportunities')} icon={TrendingUp} color="text-blue-500" />
                                 </div>
                             ) : (
                                 data.opportunities.map((opp) => (
@@ -374,12 +376,12 @@ export default function StockIntelligenceWidget() {
                                                 <span className="bg-green-100 text-green-700 p-1.5 rounded-lg">
                                                     <TrendingUp size={18} />
                                                 </span>
-                                                <span className="text-xs font-bold text-green-700 uppercase">Satış Fırsatı</span>
+                                                <span className="text-xs font-bold text-green-700 uppercase">{t('stock.saleOpportunity')}</span>
                                             </div>
                                             <h4 className="font-bold text-gray-900 mb-1">{opp.product_name}</h4>
                                             <p className="text-sm text-gray-500 mb-4">{opp.message}</p>
                                             <div className="flex items-center gap-4 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-                                                <span>Son 30 Gün: <strong>{opp.sales_last_30_days} satış</strong></span>
+                                                <span>{t('stock.last30Days')}: <strong>{opp.sales_last_30_days} {t('stock.sales')}</strong></span>
                                             </div>
                                         </div>
                                     </div>
@@ -395,9 +397,9 @@ export default function StockIntelligenceWidget() {
                                 <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                                     <h4 className="font-bold text-gray-900 flex items-center gap-2">
                                         <TrendingUp size={18} className="text-green-600" />
-                                        En Çok Satanlar
+                                        {t('stock.topSellersTitle')}
                                     </h4>
-                                    <span className="text-xs text-gray-500">Son 30 Gün</span>
+                                    <span className="text-xs text-gray-500">Son 30 {t('stock.days')}</span>
                                 </div>
                                 <div className="divide-y divide-gray-100">
                                     {data.top_sellers.map((seller, idx) => (
@@ -425,9 +427,9 @@ export default function StockIntelligenceWidget() {
                                 <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                                     <h4 className="font-bold text-gray-900 flex items-center gap-2">
                                         <TrendingDown size={18} className="text-red-500" />
-                                        Düşük Performans
+                                        {t('stock.lowPerformersTitle')}
                                     </h4>
-                                    <span className="text-xs text-gray-500">En Az Satanlar (Son 30 Gün)</span>
+                                    <span className="text-xs text-gray-500">{t('stock.lowPerformersDesc')}</span>
                                 </div>
                                 <div className="divide-y divide-gray-100">
                                     {data.low_performers.map((low, idx) => (
@@ -437,11 +439,11 @@ export default function StockIntelligenceWidget() {
                                             </div>
                                             <div className="flex-1">
                                                 <p className="font-medium text-gray-900 text-sm">{low.name}</p>
-                                                <p className="text-xs text-gray-500">{low.brand} • Stok: {low.stock}</p>
+                                                <p className="text-xs text-gray-500">{low.brand} • {t('stock.stockLabel')}: {low.stock}</p>
                                             </div>
                                             <div className="text-right">
                                                 <span className="block font-bold text-gray-900">{low.sales_count}</span>
-                                                <span className="text-xs text-gray-400">Adet Satış</span>
+                                                <span className="text-xs text-gray-400">{t('stock.salesQty')}</span>
                                             </div>
                                         </div>
                                     ))}
